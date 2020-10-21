@@ -1,7 +1,6 @@
-package tikdog_watcher
+package tikdog_util
 
 import (
-	"github.com/fsnotify/fsnotify"
 	"github.com/pubgo/xerror"
 	"os"
 	"os/exec"
@@ -10,21 +9,15 @@ import (
 	"strings"
 )
 
-func isHiddenDir(path string) bool {
+func IsHiddenDir(path string) bool {
 	return len(path) > 1 && strings.HasPrefix(filepath.Base(path), ".")
 }
 
-func cleanPath(path string) string {
+func CleanPath(path string) string {
 	return strings.TrimSuffix(strings.TrimSpace(path), "/")
 }
 
-func (t *watcherManager) withLock(f func()) {
-	t.mu.Lock()
-	f()
-	t.mu.Unlock()
-}
-
-func expandPath(path string) (string, error) {
+func ExpandPath(path string) (string, error) {
 	if strings.HasPrefix(path, "~/") {
 		home := os.Getenv("HOME")
 		return home + path[1:], nil
@@ -44,26 +37,17 @@ func expandPath(path string) (string, error) {
 	return path, nil
 }
 
-func isDir(path string) bool {
+func IsExist(name string) bool {
+	_, err := os.Stat(name)
+	return os.IsExist(err)
+}
+
+func IsDir(path string) bool {
 	pf, err := os.Stat(path)
 	return err == nil && pf.IsDir()
 }
 
-func validEvent(ev fsnotify.Event) bool {
-	return ev.Op&fsnotify.Create == fsnotify.Create ||
-		ev.Op&fsnotify.Write == fsnotify.Write ||
-		ev.Op&fsnotify.Remove == fsnotify.Remove
-}
-
-func removeEvent(ev fsnotify.Event) bool {
-	return ev.Op&fsnotify.Remove == fsnotify.Remove
-}
-
-func cmdPath(path string) string {
-	return strings.Split(path, " ")[0]
-}
-
-func getShell() ([]string, error) {
+func GetShell() ([]string, error) {
 	if path, err := exec.LookPath("bash"); err == nil {
 		return []string{path, "-c"}, nil
 	}

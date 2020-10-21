@@ -6,7 +6,8 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-var defaultCron = New(cron.WithSeconds(), cron.WithChain(cron.Recover(cron.DefaultLogger)))
+// cron.WithChain(cron.Recover(cron.DefaultLogger))
+var defaultCron = New(cron.WithSeconds())
 
 func SetDefault(c *cronManager) {
 	defaultCron = c
@@ -27,13 +28,14 @@ func Start() {
 func Stop() {
 	getDefault().Stop()
 }
+
 func List() map[string]cron.Entry {
 	return getDefault().List()
 }
 func Get(name string) cron.Entry {
 	return getDefault().Get(name)
 }
-func Add(name string, spec string, cmd func()) error {
+func Add(name string, spec string, cmd Handler) error {
 	return getDefault().Add(name, spec, cmd)
 }
 func Remove(name string) {

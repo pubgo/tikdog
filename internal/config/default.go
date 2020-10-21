@@ -2,15 +2,17 @@ package config
 
 import (
 	"github.com/mitchellh/go-homedir"
+	"github.com/pubgo/tikdog/tikdog_env"
 	"github.com/pubgo/xerror"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
 
 // 默认的全局配置
 var (
-	CfgType = "toml"
+	CfgType = "yaml"
 	CfgName = "config"
 	Project = "tikdog"
 	Debug   = true
@@ -34,8 +36,10 @@ var (
 )
 
 func init() {
-	getEnv(&Home, "home")
-	getEnv(&Mode, "mode")
+	tikdog_env.Prefix = Project
+
+	tikdog_env.Get(&Home, "home")
+	tikdog_env.Get(&Mode, "mode")
 
 	{
 		// 判断run mode格式
@@ -71,12 +75,10 @@ func init() {
 		viper.AddConfigPath(filepath.Join(_home, "."+Project, CfgName))
 	}
 
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			xerror.ExitF(err, "read config failed")
-		}
+	if err := viper.ReadInConfig(); err != nil && !strings.Contains(err.Error(), "not found") {
+		xerror.ExitF(err, "read config failed")
 	}
 
 	// 获取配置文件所在目录
-	Home = filepath.Dir(xerror.PanicErr(filepath.Abs(viper.ConfigFileUsed())).(string))
+	Home = filepath.Dir(xerror.PanicStr(filepath.Abs(viper.ConfigFileUsed())))
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/lithdew/quickjs"
+	"github.com/pubgo/xerror"
 )
 
 var rt = quickjs.NewRuntime()
@@ -42,7 +43,7 @@ func Eval(code string) (quickjs.Value, quickjs.Value) {
 	return g, val
 }
 
-func New(values ...quickjs.Value) *quickjs.Context {
+func New() *quickjs.Context {
 	ctx := rt.NewContext()
 	return ctx
 }
@@ -55,5 +56,16 @@ func check(err error) {
 			fmt.Println(evalErr.Stack)
 		}
 		panic(err)
+	}
+}
+
+func PropertyNames(ctx *quickjs.Context) {
+	names, err := ctx.Globals().PropertyNames()
+	xerror.Panic(err)
+
+	for _, name := range names {
+		val := ctx.Globals().GetByAtom(name.Atom)
+		defer val.Free()
+		//fmt.Printf("'%s': %s\n", name, val)
 	}
 }

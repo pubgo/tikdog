@@ -3,11 +3,11 @@ package tikdog_watcher
 import (
 	"errors"
 	"github.com/fsnotify/fsnotify"
+	"github.com/pubgo/tikdog/tikdog_util"
 	"github.com/pubgo/xerror"
 	"github.com/pubgo/xlog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sync"
 )
 
@@ -15,57 +15,56 @@ var (
 	ErrPathNotFound = errors.New("error: path not found")
 )
 
-type Handler func(event fsnotify.Event) error
+type Event struct {
+	fsnotify.Event
+	Watcher *fsnotify.Watcher
+}
 
-// FilterFileHookFunc is a function that is called to filter files during listings.
-// If a file is ok to be listed, nil is returned otherwise ErrSkip is returned.
-type FilterFileHookFunc func(info os.FileInfo, fullPath string) error
+type Handler func(event interface{}) error
 
 // watcherManager ...
 type watcherManager struct {
 	mu   sync.RWMutex
 	data map[string]Handler
 
-	config  *config
 	watcher *fsnotify.Watcher
-
-	eventCh chan string
-	exitCh  chan bool
+	exitCh  chan struct{}
 }
 
 func New() (*watcherManager, error) {
-	var err error
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return nil, err
+		return nil, xerror.Wrap(err)
 	}
+
 	return &watcherManager{
+		data:    make(map[string]Handler),
 		watcher: watcher,
-		eventCh: make(chan string, 1000),
+		exitCh:  make(chan struct{}),
 	}, nil
 }
 
-func isExist(name string) bool {
-	_, err := os.Stat(name)
-	return os.IsExist(err)
+func isNotExist(name string) bool {
+	info, err := os.Stat(name)
+	return os.IsNotExist(err) || info == nil
 }
 
 func (t *watcherManager) add(name string) (err error) {
 	defer xerror.RespErr(&err)
 
 	// check file existed
-	if !isExist(name) {
+	if isNotExist(name) {
 		return xerror.Wrap(ErrPathNotFound)
 	}
 
 	// filter file
-	for i := range t.config.ExcludePattern {
-		matched, err := regexp.MatchString(t.config.ExcludePattern[i], name)
-		xerror.Panic(err)
-		if matched {
-			return nil
-		}
-	}
+	//for i := range t.config.ExcludePattern {
+	//	matched, err := regexp.MatchString(t.config.ExcludePattern[i], name)
+	//	xerror.Panic(err)
+	//	if matched {
+	//		return nil
+	//	}
+	//}
 
 	return xerror.Wrap(t.watcher.Add(name))
 }
@@ -79,12 +78,20 @@ func handlePath(name *string) (err error) {
 	return nil
 }
 
+func (t *watcherManager) List() []string {
+	var data []string
+	for k := range t.data {
+		data = append(data, k)
+	}
+	return data
+}
+
 func (t *watcherManager) RemoveRecursive(name string) (err error) {
 	defer xerror.RespErr(&err)
 
 	xerror.Panic(t.Remove(name))
 
-	if !isDir(name) {
+	if !tikdog_util.IsDir(name) {
 		return nil
 	}
 
@@ -106,7 +113,7 @@ func (t *watcherManager) Remove(name string) (err error) {
 
 	xerror.Panic(handlePath(&name))
 
-	if !isExist(name) {
+	if isNotExist(name) {
 		return nil
 	}
 
@@ -137,7 +144,7 @@ func (t *watcherManager) AddRecursive(name string, h Handler) (err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if !isDir(name) {
+	if !tikdog_util.IsDir(name) {
 		xerror.Panic(t.add(name))
 		t.data[name] = h
 		return nil
@@ -162,7 +169,6 @@ func (t *watcherManager) AddRecursive(name string, h Handler) (err error) {
 // Start
 // Endless loop and never return
 func (t *watcherManager) Start() {
-
 	go func() {
 		for {
 			select {
@@ -178,7 +184,7 @@ func (t *watcherManager) Start() {
 				fn, ok := t.data[event.Name]
 				t.mu.RUnlock()
 				if ok {
-					if err := fn(event); err != nil {
+					if err := fn(Event{Watcher: t.watcher, Event: event}); err != nil {
 						xlog.Error(xerror.Parse(xerror.WrapF(err, event.String())).Stack(true))
 					}
 				}
@@ -195,5 +201,21 @@ func (t *watcherManager) Start() {
 
 // Stop
 func (t *watcherManager) Stop() {
-	t.exitCh <- true
+	t.exitCh <- struct{}{}
+}
+
+func IsWriteEvent(ev Event) bool {
+	return ev.Op&fsnotify.Write == fsnotify.Write
+}
+
+func IsDeleteEvent(ev Event) bool {
+	return ev.Op&fsnotify.Remove == fsnotify.Remove
+}
+
+func IsCreateEvent(ev Event) bool {
+	return ev.Op&fsnotify.Create == fsnotify.Create
+}
+
+func IsRenameEvent(ev Event) bool {
+	return ev.Op&fsnotify.Rename == fsnotify.Rename
 }

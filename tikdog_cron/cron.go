@@ -2,11 +2,16 @@ package tikdog_cron
 
 import (
 	"github.com/pubgo/xerror"
+	"github.com/pubgo/xlog"
 	"github.com/robfig/cron/v3"
 	"sync"
 )
 
 const notFoundEntryID = cron.EntryID(-1)
+
+type Event struct {
+}
+type Handler func(event interface{}) error
 
 var EmptyEntry = cron.Entry{}
 
@@ -24,25 +29,26 @@ func (t *cronManager) loadID(name string) cron.EntryID {
 	return notFoundEntryID
 }
 
-func (t *cronManager) Add(name string, spec string, cmd func()) (err error) {
-	defer xerror.RespErr(&err)
+func (t *cronManager) Add(name string, spec string, cmd Handler) (grr error) {
+	defer xerror.RespErr(&grr)
 
 	t.Lock()
 	defer t.Unlock()
 
-	id := t.loadID(name)
-	if id == notFoundEntryID {
-		id, err := t.cron.AddFunc(spec, cmd)
-		xerror.Panic(err)
-		t.data[name] = id
-		return nil
-	}
+	oldID := t.loadID(name)
 
-	id, err = t.cron.AddFunc(spec, cmd)
+	id, err := t.cron.AddFunc(spec, func() {
+		if err := xerror.Parse(cmd(Event{})); err != nil {
+			xlog.Error(err.Println())
+		}
+	})
 	xerror.Panic(err)
 	t.data[name] = id
 
-	t.cron.Remove(id)
+	if oldID != notFoundEntryID {
+		t.cron.Remove(id)
+		return nil
+	}
 
 	return nil
 }
