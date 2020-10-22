@@ -1,0 +1,25 @@
+log:
+  "level": "debug"
+  "development": true
+  "disableCaller": false
+  "disableStacktrace": false
+  "sampling": null
+  "encoding": "console"
+  "encoderConfig":
+    "messageKey": "M"
+    "levelKey": "L"
+    "timeKey": "T"
+    "nameKey": "N"
+    "callerKey": "C"
+    "stacktraceKey": "S"
+    "lineEnding": "\n"
+    "levelEncoder": "capitalColor"
+    "timeEncoder": "iso8601"
+    "durationEncoder": "string"
+    "callerEncoder": "default"
+    "nameEncoder": ""
+  "outputPaths":
+    - "stderr"
+  "errorOutputPaths":
+    - "stderr"
+  "initialFields": null

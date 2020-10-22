@@ -44,16 +44,11 @@ func New() (*watcherManager, error) {
 	}, nil
 }
 
-func isNotExist(name string) bool {
-	info, err := os.Stat(name)
-	return os.IsNotExist(err) || info == nil
-}
-
 func (t *watcherManager) add(name string) (err error) {
 	defer xerror.RespErr(&err)
 
 	// check file existed
-	if isNotExist(name) {
+	if tikdog_util.IsNotExist(name) {
 		return xerror.Wrap(ErrPathNotFound)
 	}
 
@@ -113,7 +108,11 @@ func (t *watcherManager) Remove(name string) (err error) {
 
 	xerror.Panic(handlePath(&name))
 
-	if isNotExist(name) {
+	if tikdog_util.IsNotExist(name) {
+		return nil
+	}
+
+	if _, ok := t.data[name]; !ok {
 		return nil
 	}
 

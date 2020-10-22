@@ -5,17 +5,47 @@ import (
 	"github.com/pubgo/xerror"
 	"github.com/spf13/viper"
 	"path/filepath"
+	"reflect"
 	"strings"
 )
 
 // Decode
 // decode config data
-func Decode(name string, data interface{}) (err error) {
+func Decode(name string, fn interface{}) (err error) {
 	defer xerror.RespErr(&err)
 
-	xerror.PanicF(viper.UnmarshalKey(name, data, func(cfg *mapstructure.DecoderConfig) {
-		cfg.TagName = CfgType
-	}), "config decode error")
+	if viper.Get(name) == nil {
+		return nil
+	}
+
+	if fn == nil {
+		return xerror.New("fn should not be nil")
+	}
+
+	vfn := reflect.ValueOf(fn)
+	if vfn.Type().Kind() != reflect.Func {
+		return xerror.New("fn should be the a function")
+	}
+
+	if vfn.Type().NumIn() != 1 {
+		return xerror.New("fn input num should be one")
+	}
+
+	mthIn := reflect.New(vfn.Type().In(0).Elem())
+	ret := reflect.ValueOf(viper.UnmarshalKey).Call(
+		[]reflect.Value{
+			reflect.ValueOf(name),
+			mthIn,
+			reflect.ValueOf(func(cfg *mapstructure.DecoderConfig) {
+				cfg.TagName = CfgType
+			}),
+		},
+	)
+	if !ret[0].IsNil() {
+		return xerror.WrapF(ret[0].Interface().(error), "config decode error")
+	}
+
+	vfn.Call([]reflect.Value{mthIn})
 
 	return
 }

@@ -38,6 +38,6 @@ func Get(name string) cron.Entry {
 func Add(name string, spec string, cmd Handler) error {
 	return getDefault().Add(name, spec, cmd)
 }
-func Remove(name string) {
-	getDefault().Remove(name)
+func Remove(name string) error {
+	return getDefault().Remove(name)
 }

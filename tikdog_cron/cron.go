@@ -1,8 +1,8 @@
 package tikdog_cron
 
 import (
+	"fmt"
 	"github.com/pubgo/xerror"
-	"github.com/pubgo/xlog"
 	"github.com/robfig/cron/v3"
 	"sync"
 )
@@ -38,17 +38,19 @@ func (t *cronManager) Add(name string, spec string, cmd Handler) (grr error) {
 	oldID := t.loadID(name)
 
 	id, err := t.cron.AddFunc(spec, func() {
-		if err := xerror.Parse(cmd(Event{})); err != nil {
-			xlog.Error(err.Println())
-		}
+		go func() {
+			if err := xerror.Parse(cmd(Event{})); err != nil {
+				fmt.Println(err.Println())
+			}
+		}()
 	})
 	xerror.Panic(err)
 	t.data[name] = id
 
-	if oldID != notFoundEntryID {
-		t.cron.Remove(id)
+	if oldID == notFoundEntryID {
 		return nil
 	}
+	t.cron.Remove(id)
 
 	return nil
 }
@@ -75,16 +77,18 @@ func (t *cronManager) List() map[string]cron.Entry {
 	return data
 }
 
-func (t *cronManager) Remove(name string) {
+func (t *cronManager) Remove(name string) error {
 	t.Lock()
 	defer t.Unlock()
 
 	id := t.loadID(name)
 	if id == notFoundEntryID {
-		return
+		return nil
 	}
+
 	t.cron.Remove(id)
 	delete(t.data, name)
+	return nil
 }
 
 func (t *cronManager) Start() {

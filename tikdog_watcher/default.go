@@ -35,6 +35,10 @@ func Add(name string, h Handler) error {
 	return xerror.Wrap(getDefault().Add(name, h))
 }
 
+func Remove(name string) error {
+	return xerror.Wrap(getDefault().Remove(name))
+}
+
 func AddRecursive(name string, h Handler) error {
 	return xerror.Wrap(getDefault().AddRecursive(name, h))
 }

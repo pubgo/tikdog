@@ -15,7 +15,7 @@ LDFLAGS += -X "${Project}/version.Version=${Version:-v0.0.1}"
 
 .PHONY: build
 build:
-	go build -ldflags '${LDFLAGS}' -mod vendor -race -v -o main main.go
+	go build -ldflags '${LDFLAGS}' -mod vendor -v -o main main.go
 
 .PHONY: install
 install:

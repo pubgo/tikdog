@@ -5,5 +5,6 @@ type Job interface {
 	Version() string
 	Kind() string
 	Type() string
+	Close() error
 	OnEvent(event interface{}) error
 }

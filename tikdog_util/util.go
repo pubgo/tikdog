@@ -37,9 +37,9 @@ func ExpandPath(path string) (string, error) {
 	return path, nil
 }
 
-func IsExist(name string) bool {
+func IsNotExist(name string) bool {
 	_, err := os.Stat(name)
-	return os.IsExist(err)
+	return os.IsNotExist(err)
 }
 
 func IsDir(path string) bool {

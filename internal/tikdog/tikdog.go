@@ -1,7 +1,6 @@
 package tikdog
 
 import (
-	"fmt"
 	"github.com/pubgo/tikdog/internal/config"
 	"github.com/pubgo/tikdog/tikdog_cron"
 	"github.com/pubgo/tikdog/tikdog_job/script_job"
@@ -25,21 +24,31 @@ type tikdog struct {
 	cfg *option
 }
 
+func initDevLog() {
+	zl, err := xlog_config.NewZapLoggerFromConfig(xlog_config.NewDevConfig())
+	xerror.Exit(err)
+
+	zl = zl.WithOptions(zap.AddCaller(), zap.AddCallerSkip(2)).Named(config.Project)
+	xerror.Exit(xlog.SetLog(xlog.New(zl)))
+}
+
+func (t *tikdog) loadLog() {
+	initDevLog()
+
+	xerror.Exit(config.Decode("log", func(cfg *xlog_config.Config) {
+		zapL := xerror.PanicErr(xlog_config.NewZapLoggerFromConfig(*cfg)).(*zap.Logger)
+		zapL = zapL.WithOptions(xlog.AddCaller(), xlog.AddCallerSkip(2)).Named(config.Project)
+		xerror.Exit(xlog.SetLog(xlog.New(zapL)))
+	}))
+}
+
 func (t *tikdog) Run() (grr error) {
 	defer xerror.RespErr(&grr)
 
-	xerror.Panic(t.loadScripts())
-
-	zl, err := xlog_config.NewZapLoggerFromConfig(xlog_config.NewDevConfig())
-	xerror.Panic(err)
-
-	zl = zl.WithOptions(zap.AddCaller(), zap.AddCallerSkip(2)).Named(config.Project)
-	xerror.Panic(xlog.SetLog(xlog.New(zl)))
+	t.loadLog()
+	t.loadScripts()
 
 	xerror.Panic(t.Start())
-
-	fmt.Println(tikdog_watcher.List())
-	fmt.Println(tikdog_cron.List())
 
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
@@ -49,9 +58,8 @@ func (t *tikdog) Run() (grr error) {
 	return nil
 }
 
-func (t *tikdog) loadScripts() (err error) {
-	fmt.Println(config.Home)
-	return filepath.Walk(config.ScriptPath(), func(path string, info os.FileInfo, err error) (grr error) {
+func (t *tikdog) loadScripts() {
+	xerror.Exit(filepath.Walk(config.ScriptPath(), func(path string, info os.FileInfo, err error) (grr error) {
 		defer xerror.RespErr(&err)
 		xerror.Panic(err)
 
@@ -65,10 +73,9 @@ func (t *tikdog) loadScripts() (err error) {
 		}
 
 		job := script_job.NewFromCode(path, code)
-		xerror.Panic(tikdog_watcher.Add(path, job.OnEvent))
-		xerror.Panic(tikdog_cron.Add(job.Name(), job.Cron(), job.OnEvent))
+		xerror.Panic(job.Load())
 		return nil
-	})
+	}))
 }
 
 func (t *tikdog) Start() (err error) {
