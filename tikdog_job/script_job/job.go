@@ -1,8 +1,6 @@
 package script_job
 
 import (
-	"fmt"
-	"github.com/dop251/goja"
 	"github.com/pubgo/tikdog/tikdog_cron"
 	"github.com/pubgo/tikdog/tikdog_runtime/js_runtime"
 	"github.com/pubgo/tikdog/tikdog_watcher"
@@ -10,42 +8,36 @@ import (
 	"io/ioutil"
 )
 
-const mainCode = "\nmain();\n"
-
-type ss struct {
+func SimpleEvent() func(event interface{}) error {
+	return (&job{}).OnEvent
 }
 
-func (t *ss) Print() {
-	fmt.Println("oksss")
+func New() *job {
+	return &job{}
 }
 
 func NewFromCode(path, code string) *job {
-	j := &job{vm: js_runtime.New(), path: path, code: code}
+	j := &job{vm: js_runtime.New(), path: path, code: code, name: path}
 	_, err := j.vm.RunString(code)
 	xerror.Exit(err)
 
-	j.name = path
-	xerror.Exit(j.vm.ExportNameTo("name", &j.name))
-	xerror.Exit(j.vm.ExportNameTo("version", &j.version))
-	xerror.Exit(j.vm.ExportNameTo("kind", &j.kind))
-	xerror.Exit(j.vm.ExportNameTo("cron", &j.cron))
-	xerror.Exit(j.vm.ExportNameTo("main", &j.main))
-	j.vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
-
-	j.vm.Set("print", fmt.Println)
-	j.vm.Set("ss", &ss{})
+	xerror.Exit(j.vm.JsExportTo("name", &j.name))
+	xerror.Exit(j.vm.JsExportTo("version", &j.version))
+	xerror.Exit(j.vm.JsExportTo("kind", &j.kind))
+	xerror.Exit(j.vm.JsExportTo("cron", &j.cron))
+	xerror.Exit(j.vm.JsExportTo("main", &j.main))
 
 	return j
 }
 
 type job struct {
+	vm      *js_runtime.Runtime
 	path    string
 	name    string
 	version string
 	kind    string
 	code    string
 	cron    string
-	vm      *js_runtime.Runtime
 	main    func()
 }
 
@@ -96,18 +88,21 @@ func (t *job) OnEvent(event interface{}) (err error) {
 	case tikdog_watcher.Event:
 		switch {
 		case tikdog_watcher.IsCreateEvent(event):
-		case tikdog_watcher.IsDeleteEvent(event):
-			xerror.Panic(t.remove())
-		case tikdog_watcher.IsRenameEvent(event):
-		case tikdog_watcher.IsWriteEvent(event):
 			dt, err := ioutil.ReadFile(event.Name)
 			xerror.Panic(err)
+			xerror.Panic(NewFromCode(event.Name, string(dt)).load())
 
+		case tikdog_watcher.IsDeleteEvent(event):
+			xerror.Panic(t.remove())
+
+		case tikdog_watcher.IsRenameEvent(event), tikdog_watcher.IsWriteEvent(event):
+			dt, err := ioutil.ReadFile(event.Name)
+			xerror.Panic(err)
 			job := NewFromCode(event.Name, string(dt))
 			xerror.Panic(t.remove())
 			xerror.Panic(job.load())
+			return nil
 		}
-
 		return nil
 	case tikdog_cron.Event:
 		xerror.Panic(xerror.Try(t.main))

@@ -2,6 +2,7 @@ package tikdog_watcher
 
 import (
 	"errors"
+	"fmt"
 	"github.com/fsnotify/fsnotify"
 	"github.com/pubgo/tikdog/tikdog_util"
 	"github.com/pubgo/xerror"
@@ -184,7 +185,7 @@ func (t *watcherManager) Start() {
 				t.mu.RUnlock()
 				if ok {
 					if err := fn(Event{Watcher: t.watcher, Event: event}); err != nil {
-						xlog.Error(xerror.Parse(xerror.WrapF(err, event.String())).Stack(true))
+						fmt.Println(xerror.Parse(xerror.WrapF(err, event.String())).Println())
 					}
 				}
 			case err, ok := <-t.watcher.Errors:

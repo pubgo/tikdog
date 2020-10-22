@@ -27,6 +27,7 @@ func getDefault() *watcherManager {
 func Start() {
 	getDefault().Start()
 }
+
 func Stop() {
 	getDefault().Stop()
 }
@@ -42,6 +43,7 @@ func Remove(name string) error {
 func AddRecursive(name string, h Handler) error {
 	return xerror.Wrap(getDefault().AddRecursive(name, h))
 }
+
 func List() []string {
 	return getDefault().List()
 }

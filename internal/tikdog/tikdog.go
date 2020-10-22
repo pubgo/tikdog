@@ -59,7 +59,9 @@ func (t *tikdog) Run() (grr error) {
 }
 
 func (t *tikdog) loadScripts() {
-	xerror.Exit(filepath.Walk(config.ScriptPath(), func(path string, info os.FileInfo, err error) (grr error) {
+	var scriptPath = config.ScriptPath()
+	xerror.Exit(tikdog_watcher.Add(scriptPath, script_job.SimpleEvent()))
+	xerror.Exit(filepath.Walk(scriptPath, func(path string, info os.FileInfo, err error) (grr error) {
 		defer xerror.RespErr(&err)
 		xerror.Panic(err)
 

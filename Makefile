@@ -1,5 +1,5 @@
 Project=github.com/pubgo/tikdog
-GOPath=$(shell go env GOPATH)
+GoPath=$(shell go env GOPATH)
 Version=$(shell git tag --sort=committerdate | tail -n 1)
 GoROOT=$(shell go env GOROOT)
 BuildTime=$(shell date "+%F %T")

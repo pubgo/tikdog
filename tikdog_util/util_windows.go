@@ -7,14 +7,14 @@ import (
 	"strings"
 )
 
-func killCmd(cmd *exec.Cmd) (pid int, err error) {
+func KillCmd(cmd *exec.Cmd) (pid int, err error) {
 	pid = cmd.Process.Pid
 	// https://stackoverflow.com/a/44551450
 	kill := exec.Command("TASKKILL", "/T", "/F", "/PID", strconv.Itoa(pid))
 	return pid, kill.Run()
 }
 
-func startCmd(cmd string) (*exec.Cmd, io.ReadCloser, io.ReadCloser, error) {
+func StartCmd(cmd string) (*exec.Cmd, io.ReadCloser, io.ReadCloser, error) {
 	var err error
 
 	if !strings.Contains(cmd, ".exe") {

@@ -4,6 +4,4 @@ var kind = "test";
 var cron = "*/1 * * * * *";
 
 function main() {
-    print(name);
-    ss.print();
 }

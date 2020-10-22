@@ -1,51 +1,46 @@
 package tikdog_cron
 
 import (
-	"fmt"
+	"context"
 	"github.com/pubgo/xerror"
+	"github.com/pubgo/xprocess"
 	"github.com/robfig/cron/v3"
 	"sync"
 )
 
-const notFoundEntryID = cron.EntryID(-1)
+type Event struct{ context.Context }
+type CallBack func(event interface{}) error
 
-type Event struct {
-}
-type Handler func(event interface{}) error
+const notFoundEntryID = cron.EntryID(-1)
 
 var EmptyEntry = cron.Entry{}
 
 type cronManager struct {
 	sync.RWMutex
 	cron *cron.Cron
-	data map[string]cron.EntryID
+	data sync.Map
 }
 
 func (t *cronManager) loadID(name string) cron.EntryID {
-	val, ok := t.data[name]
+	val, ok := t.data.Load(name)
 	if ok {
-		return val
+		return val.(cron.EntryID)
 	}
 	return notFoundEntryID
 }
 
-func (t *cronManager) Add(name string, spec string, cmd Handler) (grr error) {
+func (t *cronManager) Add(name string, spec string, cmd CallBack) (grr error) {
 	defer xerror.RespErr(&grr)
-
-	t.Lock()
-	defer t.Unlock()
 
 	oldID := t.loadID(name)
 
 	id, err := t.cron.AddFunc(spec, func() {
-		go func() {
-			if err := xerror.Parse(cmd(Event{})); err != nil {
-				fmt.Println(err.Println())
-			}
-		}()
+		xprocess.Go(func(ctx context.Context) error {
+			return xerror.Wrap(cmd(Event{Context: ctx}))
+		})
 	})
 	xerror.Panic(err)
-	t.data[name] = id
+	t.data.Store(name, id)
 
 	if oldID == notFoundEntryID {
 		return nil
@@ -67,13 +62,12 @@ func (t *cronManager) Get(name string) cron.Entry {
 }
 
 func (t *cronManager) List() map[string]cron.Entry {
-	t.RLock()
-	defer t.RUnlock()
 
-	var data = make(map[string]cron.Entry, len(t.data))
-	for k, v := range t.data {
-		data[k] = t.cron.Entry(v)
-	}
+	var data = make(map[string]cron.Entry)
+	t.data.Range(func(key, value interface{}) bool {
+		data[key.(string)] = t.cron.Entry(value.(cron.EntryID))
+		return true
+	})
 	return data
 }
 
@@ -87,7 +81,7 @@ func (t *cronManager) Remove(name string) error {
 	}
 
 	t.cron.Remove(id)
-	delete(t.data, name)
+	t.data.Delete(name)
 	return nil
 }
 
@@ -102,6 +96,5 @@ func (t *cronManager) Stop() {
 func New(opts ...cron.Option) *cronManager {
 	return &cronManager{
 		cron: cron.New(opts...),
-		data: make(map[string]cron.EntryID),
 	}
 }
