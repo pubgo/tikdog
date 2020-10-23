@@ -1,12 +1,12 @@
 package config
 
 import (
-	"github.com/mitchellh/go-homedir"
-	"github.com/pubgo/tikdog/tikdog_env"
-	"github.com/pubgo/xerror"
 	"path/filepath"
 	"strings"
 
+	"github.com/mitchellh/go-homedir"
+	"github.com/pubgo/tikdog/tikdog_env"
+	"github.com/pubgo/xerror"
 	"github.com/spf13/viper"
 )
 
@@ -16,9 +16,9 @@ var (
 	CfgName = "config"
 	Project = "tikdog"
 	Debug   = true
-	Trace   = false
 	Mode    = "dev"
 	Home    = xerror.PanicStr(filepath.Abs(filepath.Dir("")))
+
 	// RunMode 项目运行环境
 	RunMode = struct {
 		Dev     string

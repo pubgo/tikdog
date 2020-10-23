@@ -16,17 +16,15 @@ var (
 	ErrPathNotFound = errors.New("error: path not found")
 )
 
+type CallBack func(event interface{}) error
 type Event struct {
 	fsnotify.Event
 	Watcher *fsnotify.Watcher
 }
 
-type Handler func(event interface{}) error
-
 // watcherManager ...
 type watcherManager struct {
-	mu   sync.RWMutex
-	data map[string]Handler
+	data sync.Map
 
 	watcher *fsnotify.Watcher
 	exitCh  chan struct{}
@@ -39,7 +37,6 @@ func New() (*watcherManager, error) {
 	}
 
 	return &watcherManager{
-		data:    make(map[string]Handler),
 		watcher: watcher,
 		exitCh:  make(chan struct{}),
 	}, nil
@@ -76,9 +73,10 @@ func handlePath(name *string) (err error) {
 
 func (t *watcherManager) List() []string {
 	var data []string
-	for k := range t.data {
-		data = append(data, k)
-	}
+	t.data.Range(func(key, _ interface{}) bool {
+		data = append(data, key.(string))
+		return true
+	})
 	return data
 }
 
@@ -113,40 +111,41 @@ func (t *watcherManager) Remove(name string) (err error) {
 		return nil
 	}
 
-	if _, ok := t.data[name]; !ok {
+	if _, ok := t.data.Load(name); !ok {
 		return nil
 	}
 
 	xerror.Panic(t.watcher.Remove(name))
-	delete(t.data, name)
+	t.data.Delete(name)
 	return nil
 }
 
-func (t *watcherManager) Add(name string, h Handler) (err error) {
+func (t *watcherManager) Add(name string, h CallBack) (err error) {
 	defer xerror.RespErr(&err)
 
+	if h == nil {
+		return xerror.New("CallBack is nil")
+	}
+
 	xerror.Panic(handlePath(&name))
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	xerror.Panic(t.add(name))
 
-	t.data[name] = h
+	t.data.Store(name, h)
 	return nil
 }
 
-func (t *watcherManager) AddRecursive(name string, h Handler) (err error) {
+func (t *watcherManager) AddRecursive(name string, h CallBack) (err error) {
 	defer xerror.RespErr(&err)
 
-	xerror.Panic(handlePath(&name))
+	if h == nil {
+		return xerror.New("CallBack is nil")
+	}
 
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	xerror.Panic(handlePath(&name))
 
 	if !tikdog_util.IsDir(name) {
 		xerror.Panic(t.add(name))
-		t.data[name] = h
+		t.data.Store(name, h)
 		return nil
 	}
 
@@ -161,7 +160,7 @@ func (t *watcherManager) AddRecursive(name string, h Handler) (err error) {
 
 		xerror.Panic(handlePath(&name))
 		xerror.Panic(t.add(name))
-		t.data[name] = h
+		t.data.Store(name, h)
 		return nil
 	}))
 }
@@ -175,22 +174,25 @@ func (t *watcherManager) Start() {
 			case <-t.exitCh:
 				_ = t.watcher.Close()
 				return
+
 			case event, ok := <-t.watcher.Events:
 				if !ok {
 					return
 				}
 
-				t.mu.RLock()
-				fn, ok := t.data[event.Name]
-				t.mu.RUnlock()
+				fn, ok := t.data.Load(event.Name)
 				if ok {
-					if err := fn(Event{Watcher: t.watcher, Event: event}); err != nil {
+					if err := fn.(CallBack)(Event{Watcher: t.watcher, Event: event}); err != nil {
 						fmt.Println(xerror.Parse(xerror.WrapF(err, event.String())).Println())
 					}
 				}
 			case err, ok := <-t.watcher.Errors:
 				if !ok {
 					return
+				}
+
+				if err == nil {
+					continue
 				}
 
 				xlog.Error(err.Error())

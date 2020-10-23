@@ -15,7 +15,7 @@ require (
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/pubgo/xerror v0.2.11
 	github.com/pubgo/xlog v0.0.7
-	github.com/pubgo/xprocess v0.0.1
+	github.com/pubgo/xprocess v0.0.2
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.1.0
 	github.com/spf13/viper v1.7.0

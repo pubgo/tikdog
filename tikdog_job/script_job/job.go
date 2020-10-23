@@ -12,15 +12,10 @@ func SimpleEvent() func(event interface{}) error {
 	return (&job{}).OnEvent
 }
 
-func New() *job {
-	return &job{}
-}
-
 func NewFromCode(path, code string) *job {
 	j := &job{vm: js_runtime.New(), path: path, code: code, name: path}
-	_, err := j.vm.RunString(code)
-	xerror.Exit(err)
 
+	xerror.ExitErr(j.vm.RunString(code))
 	xerror.Exit(j.vm.JsExportTo("name", &j.name))
 	xerror.Exit(j.vm.JsExportTo("version", &j.version))
 	xerror.Exit(j.vm.JsExportTo("kind", &j.kind))
@@ -39,10 +34,6 @@ type job struct {
 	code    string
 	cron    string
 	main    func()
-}
-
-func (t *job) Cron() string {
-	return t.cron
 }
 
 func (t *job) remove() (err error) {
@@ -65,16 +56,8 @@ func (t *job) load() (err error) {
 	return nil
 }
 
-func (t *job) Name() string {
-	return t.name
-}
-
 func (t *job) Type() string {
 	return "script"
-}
-
-func (t *job) Close() error {
-	return nil
 }
 
 func (t *job) OnEvent(event interface{}) (err error) {
@@ -96,11 +79,10 @@ func (t *job) OnEvent(event interface{}) (err error) {
 			xerror.Panic(t.remove())
 
 		case tikdog_watcher.IsRenameEvent(event), tikdog_watcher.IsWriteEvent(event):
-			dt, err := ioutil.ReadFile(event.Name)
-			xerror.Panic(err)
+			dt := xerror.PanicBytes(ioutil.ReadFile(event.Name))
 			job := NewFromCode(event.Name, string(dt))
-			xerror.Panic(t.remove())
 			xerror.Panic(job.load())
+			xerror.Panic(t.remove())
 			return nil
 		}
 		return nil

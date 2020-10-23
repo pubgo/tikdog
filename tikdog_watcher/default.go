@@ -32,7 +32,7 @@ func Stop() {
 	getDefault().Stop()
 }
 
-func Add(name string, h Handler) error {
+func Add(name string, h CallBack) error {
 	return xerror.Wrap(getDefault().Add(name, h))
 }
 
@@ -40,7 +40,7 @@ func Remove(name string) error {
 	return xerror.Wrap(getDefault().Remove(name))
 }
 
-func AddRecursive(name string, h Handler) error {
+func AddRecursive(name string, h CallBack) error {
 	return xerror.Wrap(getDefault().AddRecursive(name, h))
 }
 

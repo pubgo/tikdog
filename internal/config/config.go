@@ -1,12 +1,13 @@
 package config
 
 import (
-	"github.com/mitchellh/mapstructure"
-	"github.com/pubgo/xerror"
-	"github.com/spf13/viper"
 	"path/filepath"
 	"reflect"
 	"strings"
+
+	"github.com/mitchellh/mapstructure"
+	"github.com/pubgo/xerror"
+	"github.com/spf13/viper"
 )
 
 // Decode
@@ -46,7 +47,6 @@ func Decode(name string, fn interface{}) (err error) {
 	}
 
 	vfn.Call([]reflect.Value{mthIn})
-
 	return
 }
 

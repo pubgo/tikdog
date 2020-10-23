@@ -16,7 +16,6 @@ const notFoundEntryID = cron.EntryID(-1)
 var EmptyEntry = cron.Entry{}
 
 type cronManager struct {
-	sync.RWMutex
 	cron *cron.Cron
 	data sync.Map
 }
@@ -31,6 +30,10 @@ func (t *cronManager) loadID(name string) cron.EntryID {
 
 func (t *cronManager) Add(name string, spec string, cmd CallBack) (grr error) {
 	defer xerror.RespErr(&grr)
+
+	if cmd == nil {
+		return xerror.New("CallBack is nil")
+	}
 
 	oldID := t.loadID(name)
 
@@ -51,9 +54,6 @@ func (t *cronManager) Add(name string, spec string, cmd CallBack) (grr error) {
 }
 
 func (t *cronManager) Get(name string) cron.Entry {
-	t.RLock()
-	defer t.RUnlock()
-
 	id := t.loadID(name)
 	if id == notFoundEntryID {
 		return EmptyEntry
@@ -72,9 +72,6 @@ func (t *cronManager) List() map[string]cron.Entry {
 }
 
 func (t *cronManager) Remove(name string) error {
-	t.Lock()
-	defer t.Unlock()
-
 	id := t.loadID(name)
 	if id == notFoundEntryID {
 		return nil

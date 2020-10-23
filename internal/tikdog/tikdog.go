@@ -1,6 +1,12 @@
 package tikdog
 
 import (
+	"io/ioutil"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+
 	"github.com/pubgo/tikdog/internal/config"
 	"github.com/pubgo/tikdog/tikdog_cron"
 	"github.com/pubgo/tikdog/tikdog_job/script_job"
@@ -9,20 +15,13 @@ import (
 	"github.com/pubgo/xlog"
 	"github.com/pubgo/xlog/xlog_config"
 	"go.uber.org/zap"
-	"io/ioutil"
-	"os"
-	"os/signal"
-	"path/filepath"
-	"syscall"
 )
 
 func New() *tikdog {
 	return &tikdog{}
 }
 
-type tikdog struct {
-	cfg *option
-}
+type tikdog struct{}
 
 func initDevLog() {
 	zl, err := xlog_config.NewZapLoggerFromConfig(xlog_config.NewDevConfig())
