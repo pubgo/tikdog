@@ -14,32 +14,43 @@ func Set(key, value string) error {
 		key = Prefix + "_" + key
 	}
 
-	return xerror.Wrap(SetSys(key, value))
-}
-
-func SetSys(key, value string) error {
 	return xerror.Wrap(os.Setenv(strings.ToUpper(key), value))
 }
 
-func Get(env *string, names ...string) {
-	var nms []string
-	if Prefix == "" {
-		nms = names
-	} else {
-		for i := range names {
-			nms = append(nms, strings.ToUpper(strings.Join([]string{Prefix, names[i]}, "_")))
-		}
-	}
-
-	GetSys(env, nms...)
-}
-
-func GetSys(val *string, names ...string) {
+func Get(val *string, names ...string) {
 	for _, name := range names {
-		env, ok := os.LookupEnv(strings.ToUpper(name))
+		nm := name
+		if Prefix != "" {
+			nm = Prefix + "_" + nm
+		}
+
+		env, ok := os.LookupEnv(strings.ToUpper(nm))
 		env = strings.TrimSpace(env)
 		if ok && env != "" {
 			*val = env
 		}
 	}
+}
+
+// ExpandEnv replaces ${var} or $var in the string according to the values
+// of the current environment variables. References to undefined
+// variables are replaced by the empty string.
+func ExpandEnv(s string) string {
+	if Prefix != "" {
+		s = Prefix + "_" + s
+	}
+
+	return os.ExpandEnv(s)
+}
+
+func Clear() {
+	os.Clearenv()
+}
+
+func LookupEnv(key string) (string, bool) {
+	if Prefix != "" {
+		key = Prefix + "_" + key
+	}
+
+	return os.LookupEnv(key)
 }

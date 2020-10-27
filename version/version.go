@@ -1,9 +1,10 @@
 package version
 
 import (
+	"runtime"
+
 	ver "github.com/hashicorp/go-version"
 	"github.com/pubgo/xerror"
-	"runtime"
 )
 
 var BuildTime = ""

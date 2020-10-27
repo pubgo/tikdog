@@ -75,6 +75,7 @@ func init() {
 		viper.AddConfigPath(filepath.Join(_home, "."+Project, CfgName))
 	}
 
+	// 检查配置文件是否存在
 	if err := viper.ReadInConfig(); err != nil && !strings.Contains(err.Error(), "not found") {
 		xerror.ExitF(err, "read config failed")
 	}

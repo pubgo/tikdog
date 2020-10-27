@@ -32,9 +32,7 @@ type watcherManager struct {
 
 func New() (*watcherManager, error) {
 	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return nil, xerror.Wrap(err)
-	}
+	xerror.Exit(err)
 
 	return &watcherManager{
 		watcher: watcher,
@@ -62,15 +60,6 @@ func (t *watcherManager) add(name string) (err error) {
 	return xerror.Wrap(t.watcher.Add(name))
 }
 
-func handlePath(name *string) (err error) {
-	defer xerror.RespErr(&err)
-
-	nme := xerror.PanicStr(filepath.EvalSymlinks(*name))
-	*name = xerror.PanicStr(filepath.Abs(nme))
-
-	return nil
-}
-
 func (t *watcherManager) List() []string {
 	var data []string
 	t.data.Range(func(key, _ interface{}) bool {
@@ -83,6 +72,7 @@ func (t *watcherManager) List() []string {
 func (t *watcherManager) RemoveRecursive(name string) (err error) {
 	defer xerror.RespErr(&err)
 
+	xerror.Panic(handlePath(&name))
 	xerror.Panic(t.Remove(name))
 
 	if !tikdog_util.IsDir(name) {
@@ -98,7 +88,8 @@ func (t *watcherManager) RemoveRecursive(name string) (err error) {
 			return nil
 		}
 
-		return t.Remove(path)
+		xerror.Panic(handlePath(&name))
+		return xerror.Wrap(t.Remove(path))
 	}))
 }
 
@@ -218,6 +209,27 @@ func IsCreateEvent(ev Event) bool {
 	return ev.Op&fsnotify.Create == fsnotify.Create
 }
 
+func IsUpdateEvent(ev Event) bool {
+	op := ev.Op & fsnotify.Create
+	switch op {
+	case fsnotify.Write, fsnotify.Rename:
+		return true
+	default:
+		return false
+	}
+}
+
 func IsRenameEvent(ev Event) bool {
 	return ev.Op&fsnotify.Rename == fsnotify.Rename
+}
+
+func handlePath(name *string) (err error) {
+	defer xerror.RespErr(&err)
+
+	nm := *name
+	nm = filepath.Clean(nm)
+	nme := xerror.PanicStr(filepath.EvalSymlinks(*name))
+	*name = xerror.PanicStr(filepath.Abs(nme))
+
+	return nil
 }

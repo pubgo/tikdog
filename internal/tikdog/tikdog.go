@@ -82,7 +82,7 @@ func (t *tikdog) loadScripts() {
 func (t *tikdog) Start() (err error) {
 	defer xerror.RespErr(&err)
 
-	tikdog_cron.Start()
+	xerror.Panic(tikdog_cron.Start())
 	tikdog_watcher.Start()
 
 	return nil
@@ -91,7 +91,7 @@ func (t *tikdog) Start() (err error) {
 func (t *tikdog) Stop() (err error) {
 	defer xerror.RespErr(&err)
 
-	tikdog_cron.Stop()
+	xerror.Panic(tikdog_cron.Stop())
 	tikdog_watcher.Stop()
 
 	return nil

@@ -11,21 +11,11 @@ import (
 type Event struct{ context.Context }
 type CallBack func(event interface{}) error
 
-const notFoundEntryID = cron.EntryID(-1)
-
 var EmptyEntry = cron.Entry{}
 
 type cronManager struct {
 	cron *cron.Cron
 	data sync.Map
-}
-
-func (t *cronManager) loadID(name string) cron.EntryID {
-	val, ok := t.data.Load(name)
-	if ok {
-		return val.(cron.EntryID)
-	}
-	return notFoundEntryID
 }
 
 func (t *cronManager) Add(name string, spec string, cmd CallBack) (grr error) {
@@ -35,34 +25,31 @@ func (t *cronManager) Add(name string, spec string, cmd CallBack) (grr error) {
 		return xerror.New("CallBack is nil")
 	}
 
-	oldID := t.loadID(name)
-
 	id, err := t.cron.AddFunc(spec, func() {
 		xprocess.Go(func(ctx context.Context) error {
 			return xerror.Wrap(cmd(Event{Context: ctx}))
 		})
 	})
 	xerror.Panic(err)
-	t.data.Store(name, id)
+	actual, loaded := t.data.LoadOrStore(name, id)
 
-	if oldID == notFoundEntryID {
+	if !loaded {
 		return nil
 	}
-	t.cron.Remove(id)
+	t.cron.Remove(actual.(cron.EntryID))
 
 	return nil
 }
 
 func (t *cronManager) Get(name string) cron.Entry {
-	id := t.loadID(name)
-	if id == notFoundEntryID {
-		return EmptyEntry
+	val, ok := t.data.Load(name)
+	if ok {
+		return t.cron.Entry(val.(cron.EntryID))
 	}
-	return t.cron.Entry(id)
+	return EmptyEntry
 }
 
 func (t *cronManager) List() map[string]cron.Entry {
-
 	var data = make(map[string]cron.Entry)
 	t.data.Range(func(key, value interface{}) bool {
 		data[key.(string)] = t.cron.Entry(value.(cron.EntryID))
@@ -72,22 +59,24 @@ func (t *cronManager) List() map[string]cron.Entry {
 }
 
 func (t *cronManager) Remove(name string) error {
-	id := t.loadID(name)
-	if id == notFoundEntryID {
+	id, ok := t.data.Load(name)
+	if !ok {
 		return nil
 	}
 
-	t.cron.Remove(id)
+	t.cron.Remove(id.(cron.EntryID))
 	t.data.Delete(name)
 	return nil
 }
 
-func (t *cronManager) Start() {
+func (t *cronManager) Start() error {
 	t.cron.Start()
+	return nil
 }
 
-func (t *cronManager) Stop() {
+func (t *cronManager) Stop() error {
 	t.cron.Stop()
+	return nil
 }
 
 func New(opts ...cron.Option) *cronManager {

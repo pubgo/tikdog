@@ -71,20 +71,19 @@ func (t *job) OnEvent(event interface{}) (err error) {
 	case tikdog_watcher.Event:
 		switch {
 		case tikdog_watcher.IsCreateEvent(event):
-			dt, err := ioutil.ReadFile(event.Name)
-			xerror.Panic(err)
+			dt := xerror.PanicBytes(ioutil.ReadFile(event.Name))
 			xerror.Panic(NewFromCode(event.Name, string(dt)).load())
 
 		case tikdog_watcher.IsDeleteEvent(event):
 			xerror.Panic(t.remove())
 
-		case tikdog_watcher.IsRenameEvent(event), tikdog_watcher.IsWriteEvent(event):
+		case tikdog_watcher.IsUpdateEvent(event):
 			dt := xerror.PanicBytes(ioutil.ReadFile(event.Name))
-			job := NewFromCode(event.Name, string(dt))
-			xerror.Panic(job.load())
+			xerror.Panic(NewFromCode(event.Name, string(dt)).load())
 			xerror.Panic(t.remove())
 			return nil
 		}
+
 		return nil
 	case tikdog_cron.Event:
 		xerror.Panic(xerror.Try(t.main))

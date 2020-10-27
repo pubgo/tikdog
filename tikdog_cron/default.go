@@ -21,12 +21,12 @@ func getDefault() *cronManager {
 	return nil
 }
 
-func Start() {
-	getDefault().Start()
+func Start() error {
+	return getDefault().Start()
 }
 
-func Stop() {
-	getDefault().Stop()
+func Stop() error {
+	return getDefault().Stop()
 }
 
 func List() map[string]cron.Entry {

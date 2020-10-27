@@ -40,10 +40,6 @@ func Remove(name string) error {
 	return xerror.Wrap(getDefault().Remove(name))
 }
 
-func AddRecursive(name string, h CallBack) error {
-	return xerror.Wrap(getDefault().AddRecursive(name, h))
-}
-
 func List() []string {
 	return getDefault().List()
 }
