@@ -2,6 +2,7 @@ package tikdog_watcher
 
 import (
 	"errors"
+
 	"github.com/pubgo/xerror"
 )
 
@@ -34,6 +35,14 @@ func Stop() {
 
 func Add(name string, h CallBack) error {
 	return xerror.Wrap(getDefault().Add(name, h))
+}
+
+func AddRecursive(name string, h CallBack) (err error) {
+	return xerror.Wrap(getDefault().AddRecursive(name, h))
+}
+
+func AddExclude(name string) {
+	getDefault().AddExclude(name)
 }
 
 func Remove(name string) error {

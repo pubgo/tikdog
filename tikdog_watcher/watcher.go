@@ -3,13 +3,14 @@ package tikdog_watcher
 import (
 	"errors"
 	"fmt"
-	"github.com/fsnotify/fsnotify"
-	"github.com/pubgo/tikdog/tikdog_util"
-	"github.com/pubgo/xerror"
-	"github.com/pubgo/xlog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/pubgo/xerror"
+	"github.com/pubgo/xlog"
 )
 
 var (
@@ -24,10 +25,10 @@ type Event struct {
 
 // watcherManager ...
 type watcherManager struct {
-	data sync.Map
-
-	watcher *fsnotify.Watcher
-	exitCh  chan struct{}
+	data          sync.Map
+	excludeSuffix []string
+	watcher       *fsnotify.Watcher
+	exitCh        chan struct{}
 }
 
 func New() (*watcherManager, error) {
@@ -40,24 +41,23 @@ func New() (*watcherManager, error) {
 	}, nil
 }
 
-func (t *watcherManager) add(name string) (err error) {
+func (t *watcherManager) add(name string, h CallBack) (err error) {
 	defer xerror.RespErr(&err)
 
 	// check file existed
-	if tikdog_util.IsNotExist(name) {
+	if IsNotExist(name) {
 		return xerror.Wrap(ErrPathNotFound)
 	}
 
 	// filter file
-	//for i := range t.config.ExcludePattern {
-	//	matched, err := regexp.MatchString(t.config.ExcludePattern[i], name)
-	//	xerror.Panic(err)
-	//	if matched {
-	//		return nil
-	//	}
-	//}
+	for i := range t.excludeSuffix {
+		if strings.HasSuffix(name, t.excludeSuffix[i]) {
+			t.data.Store(name, h)
+			return xerror.Wrap(t.watcher.Add(name))
+		}
+	}
 
-	return xerror.Wrap(t.watcher.Add(name))
+	return nil
 }
 
 func (t *watcherManager) List() []string {
@@ -75,7 +75,7 @@ func (t *watcherManager) RemoveRecursive(name string) (err error) {
 	xerror.Panic(handlePath(&name))
 	xerror.Panic(t.Remove(name))
 
-	if !tikdog_util.IsDir(name) {
+	if !IsDir(name) {
 		return nil
 	}
 
@@ -98,7 +98,7 @@ func (t *watcherManager) Remove(name string) (err error) {
 
 	xerror.Panic(handlePath(&name))
 
-	if tikdog_util.IsNotExist(name) {
+	if IsNotExist(name) {
 		return nil
 	}
 
@@ -111,6 +111,10 @@ func (t *watcherManager) Remove(name string) (err error) {
 	return nil
 }
 
+func (t *watcherManager) AddExclude(name string) {
+	t.excludeSuffix = append(t.excludeSuffix, name)
+}
+
 func (t *watcherManager) Add(name string, h CallBack) (err error) {
 	defer xerror.RespErr(&err)
 
@@ -119,9 +123,7 @@ func (t *watcherManager) Add(name string, h CallBack) (err error) {
 	}
 
 	xerror.Panic(handlePath(&name))
-	xerror.Panic(t.add(name))
-
-	t.data.Store(name, h)
+	xerror.Panic(t.add(name, h))
 	return nil
 }
 
@@ -133,10 +135,9 @@ func (t *watcherManager) AddRecursive(name string, h CallBack) (err error) {
 	}
 
 	xerror.Panic(handlePath(&name))
+	xerror.Panic(t.add(name, h))
 
-	if !tikdog_util.IsDir(name) {
-		xerror.Panic(t.add(name))
-		t.data.Store(name, h)
+	if !IsDir(name) {
 		return nil
 	}
 
@@ -149,9 +150,8 @@ func (t *watcherManager) AddRecursive(name string, h CallBack) (err error) {
 			return nil
 		}
 
-		xerror.Panic(handlePath(&name))
-		xerror.Panic(t.add(name))
-		t.data.Store(name, h)
+		xerror.Panic(handlePath(&path))
+		xerror.Panic(t.add(path, h))
 		return nil
 	}))
 }
@@ -210,9 +210,8 @@ func IsCreateEvent(ev Event) bool {
 }
 
 func IsUpdateEvent(ev Event) bool {
-	op := ev.Op & fsnotify.Create
-	switch op {
-	case fsnotify.Write, fsnotify.Rename:
+	switch {
+	case ev.Op&fsnotify.Write == fsnotify.Write, ev.Op&fsnotify.Rename == fsnotify.Rename:
 		return true
 	default:
 		return false
@@ -232,4 +231,14 @@ func handlePath(name *string) (err error) {
 	*name = xerror.PanicStr(filepath.Abs(nme))
 
 	return nil
+}
+
+func IsNotExist(name string) bool {
+	_, err := os.Stat(name)
+	return os.IsNotExist(err)
+}
+
+func IsDir(path string) bool {
+	pf, err := os.Stat(path)
+	return err == nil && pf.IsDir()
 }
