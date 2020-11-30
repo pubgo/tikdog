@@ -28,7 +28,7 @@ func initDevLog() {
 	xerror.Exit(err)
 
 	zl = zl.WithOptions(zap.AddCaller(), zap.AddCallerSkip(2)).Named(config.Project)
-	xerror.Exit(xlog.SetLog(xlog.New(zl)))
+	xerror.Exit(xlog.SetDefault(xlog.New(zl)))
 }
 
 func (t *tikdog) loadLog() {
@@ -37,7 +37,7 @@ func (t *tikdog) loadLog() {
 	xerror.Exit(config.Decode("log", func(cfg *xlog_config.Config) {
 		zapL := xerror.PanicErr(xlog_config.NewZapLoggerFromConfig(*cfg)).(*zap.Logger)
 		zapL = zapL.WithOptions(xlog.AddCaller(), xlog.AddCallerSkip(2)).Named(config.Project)
-		xerror.Exit(xlog.SetLog(xlog.New(zapL)))
+		xerror.Exit(xlog.SetDefault(xlog.New(zapL)))
 	}))
 }
 
