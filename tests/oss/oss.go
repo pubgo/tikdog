@@ -51,6 +51,10 @@ func getHash(path string) (hash string) {
 	return
 }
 
+// 本地文件加载
+// 本地存储中，如果已经同步了，那么就不用同步了
+//
+
 func main() {
 	tikdog_watcher.Start()
 
@@ -82,6 +86,7 @@ func main() {
 		}
 		return nil
 	}))
+
 	xerror.Panic(filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -96,13 +101,28 @@ func main() {
 		}
 
 		key := []byte(prefix + path)
-		return xerror.Wrap(db.Update(func(txn *badger.Txn) error {
-			_, err := txn.Get(key)
+
+		var val *WatcherFile
+		xerror.Panic(db.View(func(txn *badger.Txn) error {
+			itm, err := txn.Get(key)
 			if err != badger.ErrKeyNotFound {
 				return nil
 			}
 
-			fmt.Println(string(key))
+			xerror.Panic(err)
+			xerror.Panic(itm.Value(func(_val []byte) error { return xerror.Wrap(jsoniter.Unmarshal(_val, val)) }))
+			return nil
+		}))
+
+		hash := getHash(path)
+
+		// 不存在或者修改了
+		if val == nil || val.Hash != hash {
+			//	oss put
+			return nil
+		}
+
+		return xerror.Wrap(db.Update(func(txn *badger.Txn) error {
 			return xerror.Wrap(txn.Set(key, getBytes(&WatcherFile{
 				Synced:  false,
 				Changed: true,
