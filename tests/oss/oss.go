@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
@@ -10,6 +8,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pubgo/tikdog/tikdog_watcher"
 	"github.com/pubgo/xerror"
+	"github.com/twmb/murmur3"
 	"io"
 	"log"
 	"os"
@@ -17,14 +16,18 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 )
 
-type WatcherFile struct {
+type SyncFile struct {
+	Name    string
 	Path    string
 	Hash    string
 	Changed bool
 	Synced  bool
+	Size    int64
+	Mode    os.FileMode
+	ModTime int64
+	IsDir   bool
 }
 
 func getBytes(data interface{}) []byte {
@@ -34,59 +37,72 @@ func getBytes(data interface{}) []byte {
 
 func getHash(path string) (hash string) {
 	file, err := os.Open(path)
-	if err == nil {
-		h_ob := sha256.New()
-		_, err := io.Copy(h_ob, file)
-		if err == nil {
-			hash := h_ob.Sum(nil)
-			hashvalue := hex.EncodeToString(hash)
-			return hashvalue
-		} else {
-			return "something wrong when use sha256 interface..."
-		}
-	} else {
+	if err != nil {
 		fmt.Printf("failed to open %s\n", path)
+		return ""
 	}
 	defer file.Close()
-	return
+
+	var h_ob = murmur3.New64()
+	if _, err = io.Copy(h_ob, file); err == nil {
+		hash := h_ob.Sum(nil)
+		hashvalue := hex.EncodeToString(hash)
+		return hashvalue
+	} else {
+		fmt.Printf("failed to sum %s\n", err)
+		return "something wrong when use sha256 interface..."
+	}
 }
 
 // 本地文件加载
 // 本地存储中，如果已经同步了，那么就不用同步了
 //
 
-func main() {
-	tikdog_watcher.Start()
+var prefix = "sync_files"
+var ext = "drawio"
 
-	var prefix = "watcher_file:"
-	var ext = "drawio"
-	var dir = os.ExpandEnv("${HOME}/Documents")
-	fmt.Println(dir, ext)
+func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
+	var callback = func(event interface{}) error {
+		evt := event.(tikdog_watcher.Event)
+		fmt.Println(evt.Op)
+		if tikdog_watcher.IsWriteEvent(evt) {
+			key := filepath.Join(prefix, evt.Name)
 
-	db, err := badger.Open(badger.DefaultOptions("demo"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
+			info, err := os.Lstat(evt.Name)
+			xerror.Panic(err)
 
-	xerror.Panic(tikdog_watcher.AddRecursive(dir, func(event interface{}) error {
-		switch event := event.(type) {
-		case tikdog_watcher.Event:
-			if tikdog_watcher.IsUpdateEvent(event) {
-				key := []byte(prefix + event.Name)
-				return xerror.Wrap(db.View(func(txn *badger.Txn) error {
-					return xerror.Wrap(txn.Set(key, getBytes(&WatcherFile{
-						Synced:  false,
-						Changed: true,
-						Path:    event.Name,
-						Hash:    getHash(event.Name),
-					})))
+			var sf SyncFile
+			xerror.Panic(db.View(func(txn *badger.Txn) error {
+				itm, _ := txn.Get([]byte(key))
+				return xerror.Wrap(itm.Value(func(_val []byte) error {
+					return xerror.Wrap(jsoniter.Unmarshal(_val, &sf))
 				}))
+			}))
+
+			if info.ModTime().Unix() == sf.ModTime {
+				return nil
 			}
+
+			fmt.Println("sync:", key)
+			xerror.Panic(kk.PutObjectFromFile(key, evt.Name))
+
+			return xerror.Wrap(db.Update(func(txn *badger.Txn) error {
+				sf.Name = info.Name()
+				sf.Size = info.Size()
+				sf.Mode = info.Mode()
+				sf.ModTime = info.ModTime().Unix()
+				sf.IsDir = info.IsDir()
+				sf.Changed = false
+				sf.Synced = true
+				sf.Hash = getHash(evt.Name)
+				fmt.Println("store:", key)
+				return xerror.Wrap(txn.Set([]byte(key), getBytes(sf)))
+			}))
 		}
 		return nil
-	}))
+	}
 
+	var sfs []SyncFile
 	xerror.Panic(filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -100,49 +116,93 @@ func main() {
 			return nil
 		}
 
-		key := []byte(prefix + path)
+		// watcher
+		xerror.Panic(tikdog_watcher.Add(path, callback))
 
-		var val *WatcherFile
-		xerror.Panic(db.View(func(txn *badger.Txn) error {
+		key := []byte(filepath.Join(prefix, path))
+
+		return xerror.Wrap(db.View(func(txn *badger.Txn) error {
 			itm, err := txn.Get(key)
-			if err != badger.ErrKeyNotFound {
+			if err == badger.ErrKeyNotFound {
+				sfs = append(sfs, SyncFile{
+					Name:    info.Name(),
+					Size:    info.Size(),
+					Mode:    info.Mode(),
+					ModTime: info.ModTime().Unix(),
+					IsDir:   info.IsDir(),
+					Synced:  false,
+					Changed: true,
+					Path:    path,
+					Hash:    getHash(path),
+				})
 				return nil
 			}
-
 			xerror.Panic(err)
-			xerror.Panic(itm.Value(func(_val []byte) error { return xerror.Wrap(jsoniter.Unmarshal(_val, val)) }))
+
+			xerror.Panic(itm.Value(func(_val []byte) error {
+				var sf SyncFile
+				xerror.Panic(jsoniter.Unmarshal(_val, &sf))
+				if sf.ModTime != info.ModTime().Unix() {
+					sf.Name = info.Name()
+					sf.Size = info.Size()
+					sf.Mode = info.Mode()
+					sf.ModTime = info.ModTime().Unix()
+					sf.IsDir = info.IsDir()
+					sf.Changed = true
+					sf.Hash = getHash(path)
+				}
+
+				sfs = append(sfs, sf)
+				return nil
+			}))
 			return nil
-		}))
-
-		hash := getHash(path)
-
-		// 不存在或者修改了
-		if val == nil || val.Hash != hash {
-			//	oss put
-			return nil
-		}
-
-		return xerror.Wrap(db.Update(func(txn *badger.Txn) error {
-			return xerror.Wrap(txn.Set(key, getBytes(&WatcherFile{
-				Synced:  false,
-				Changed: true,
-				Path:    path,
-				Hash:    getHash(path),
-			})))
 		}))
 	}))
+
+	for i := range sfs {
+		sf := sfs[i]
+		key := filepath.Join(prefix, sf.Path)
+
+		if !sf.Synced {
+			fmt.Println("sync:", key, sf.Path)
+			xerror.Panic(kk.PutObjectFromFile(key, sf.Path))
+			sf.Synced = true
+		}
+
+		if sf.Changed {
+			xerror.Panic(db.Update(func(txn *badger.Txn) error {
+				sf.Changed = false
+				fmt.Println("store:", key, sf.Path)
+				return xerror.Wrap(txn.Set([]byte(key), getBytes(sf)))
+			}))
+		}
+	}
+}
+
+func main() {
+	tikdog_watcher.Start()
 
 	client, err := oss.New(
 		os.Getenv("oss_endpoint"),
 		os.Getenv("oss_ak"),
-		os.Getenv("oss_sk"))
+		os.Getenv("oss_sk"),
+	)
 	xerror.Panic(err)
 
 	kk := xerror.PanicErr(client.Bucket("kooksee")).(*oss.Bucket)
 
-	for _, k := range xerror.PanicErr(kk.ListObjectsV2()).(oss.ListObjectsResultV2).Objects {
-		fmt.Printf("%#v\n", k)
+	db, err := badger.Open(badger.DefaultOptions("demo"))
+	if err != nil {
+		log.Fatal(err)
 	}
+	defer db.Close()
+
+	syncDir(os.ExpandEnv("${HOME}/Documents"), kk, db, ext)
+	syncDir(os.ExpandEnv("${HOME}/Downloads"), kk, db, "")
+
+	//for _, k := range xerror.PanicErr(kk.ListObjectsV2(oss.Prefix(prefix))).(oss.ListObjectsResultV2).Objects {
+	//	fmt.Printf("%#v\n", k)
+	//}
 
 	lsRes, err := client.ListBuckets()
 	xerror.Panic(err)
@@ -151,59 +211,56 @@ func main() {
 		fmt.Println("Buckets:", bucket.Name)
 	}
 
-	ch := make(chan os.Signal, 1)
+	ch := make(chan os.Signal)
 	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGKILL, syscall.SIGHUP)
-	go func() {
-		<-ch
-		os.Exit(0)
-	}()
+	<-ch
 
-	for {
-		xerror.Exit(db.Update(func(txn *badger.Txn) error {
-			opts := badger.DefaultIteratorOptions
-			opts.PrefetchSize = 10
-
-			it := txn.NewIterator(opts)
-			defer it.Close()
-
-			//for it.Seek([]byte(prefix)); it.ValidForPrefix([]byte(prefix)); it.Next() {
-			for it.Rewind(); it.Valid(); it.Next() {
-				item := it.Item()
-				k := item.Key()
-
-				if !bytes.HasPrefix(k, []byte(prefix)) {
-					continue
-				}
-
-				var val []byte
-				if err := item.Value(func(v []byte) error {
-					val = v
-					return nil
-				}); err != nil {
-					return err
-				}
-
-				var wf WatcherFile
-				xerror.Panic(jsoniter.Unmarshal(val, &wf))
-
-				fmt.Printf("%#v\n", wf)
-				if !wf.Changed || wf.Synced {
-					continue
-				}
-
-				fmt.Printf("key=%s, value=%s\n", k, val)
-				xerror.Panic(kk.PutObjectFromFile("watcher_file"+wf.Path, wf.Path))
-				wf.Synced = true
-				wf.Changed = false
-				wf.Hash = getHash(wf.Path)
-				xerror.Panic(txn.Set(k, getBytes(&wf)))
-				//kk.GetObjectMeta()
-			}
-
-			return nil
-		}))
-
-		log.Println("checking......")
-		time.Sleep(time.Minute)
-	}
+	//for {
+	//	xerror.Exit(db.Update(func(txn *badger.Txn) error {
+	//		opts := badger.DefaultIteratorOptions
+	//		opts.PrefetchSize = 10
+	//
+	//		it := txn.NewIterator(opts)
+	//		defer it.Close()
+	//
+	//		//for it.Seek([]byte(prefix)); it.ValidForPrefix([]byte(prefix)); it.Next() {
+	//		for it.Rewind(); it.Valid(); it.Next() {
+	//			item := it.Item()
+	//			k := item.Key()
+	//
+	//			if !bytes.HasPrefix(k, []byte(prefix)) {
+	//				continue
+	//			}
+	//
+	//			var val []byte
+	//			if err := item.Value(func(v []byte) error {
+	//				val = v
+	//				return nil
+	//			}); err != nil {
+	//				return err
+	//			}
+	//
+	//			var wf SyncFile
+	//			xerror.Panic(jsoniter.Unmarshal(val, &wf))
+	//
+	//			fmt.Printf("%#v\n", wf)
+	//			if !wf.Changed || wf.Synced {
+	//				continue
+	//			}
+	//
+	//			fmt.Printf("key=%s, value=%s\n", k, val)
+	//			xerror.Panic(kk.PutObjectFromFile("watcher_file"+wf.Path, wf.Path))
+	//			wf.Synced = true
+	//			wf.Changed = false
+	//			wf.Hash = getHash(wf.Path)
+	//			xerror.Panic(txn.Set(k, getBytes(&wf)))
+	//			//kk.GetObjectMeta()
+	//		}
+	//
+	//		return nil
+	//	}))
+	//
+	//	log.Println("checking......")
+	//	time.Sleep(time.Minute)
+	//}
 }

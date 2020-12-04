@@ -41,10 +41,6 @@ func AddRecursive(name string, h CallBack) (err error) {
 	return xerror.Wrap(getDefault().AddRecursive(name, h))
 }
 
-func AddExclude(name string) {
-	getDefault().AddExclude(name)
-}
-
 func Remove(name string) error {
 	return xerror.Wrap(getDefault().Remove(name))
 }

@@ -5,7 +5,6 @@ go 1.14
 require (
 	github.com/aliyun/aliyun-oss-go-sdk v2.1.5+incompatible
 	github.com/baiyubin/aliyun-sts-go-sdk v0.0.0-20180326062324-cfa1a18b161f // indirect
-	github.com/cockroachdb/pebble v0.0.0-20201130172119-f19faf8529d6
 	github.com/creack/pty v1.1.11
 	github.com/dgraph-io/badger/v2 v2.2007.2
 	github.com/dlclark/regexp2 v1.4.0 // indirect
@@ -13,12 +12,14 @@ require (
 	github.com/facebook/ent v0.5.1
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
+	github.com/golang/snappy v0.0.2-0.20190904063534-ff6b7dc882cf // indirect
 	github.com/hashicorp/go-version v1.2.1
 	github.com/json-iterator/go v1.1.10
 	github.com/magiconair/properties v1.8.4 // indirect
 	github.com/mattn/go-sqlite3 v1.14.5
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/mitchellh/mapstructure v1.4.0
+	github.com/onsi/ginkgo v1.13.0 // indirect
 	github.com/pelletier/go-toml v1.8.1 // indirect
 	github.com/pubgo/xerror v0.2.13
 	github.com/pubgo/xlog v0.0.10
@@ -30,6 +31,7 @@ require (
 	github.com/spf13/cobra v1.1.1
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/viper v1.7.1
+	github.com/twmb/murmur3 v1.1.5
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.16.0
 	golang.org/x/sys v0.0.0-20201130072748-111129e158e2 // indirect

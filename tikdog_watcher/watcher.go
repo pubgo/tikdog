@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
@@ -25,10 +24,9 @@ type Event struct {
 
 // watcherManager ...
 type watcherManager struct {
-	data          sync.Map
-	excludeSuffix []string
-	watcher       *fsnotify.Watcher
-	exitCh        chan struct{}
+	data    sync.Map
+	watcher *fsnotify.Watcher
+	exitCh  chan struct{}
 }
 
 func New() (*watcherManager, error) {
@@ -50,14 +48,8 @@ func (t *watcherManager) add(name string, h CallBack) (err error) {
 	}
 
 	// filter file
-	for i := range t.excludeSuffix {
-		if strings.HasSuffix(name, t.excludeSuffix[i]) {
-			t.data.Store(name, h)
-			return xerror.Wrap(t.watcher.Add(name))
-		}
-	}
-
-	return nil
+	t.data.Store(name, h)
+	return xerror.Wrap(t.watcher.Add(name))
 }
 
 func (t *watcherManager) List() []string {
@@ -109,10 +101,6 @@ func (t *watcherManager) Remove(name string) (err error) {
 	xerror.Panic(t.watcher.Remove(name))
 	t.data.Delete(name)
 	return nil
-}
-
-func (t *watcherManager) AddExclude(name string) {
-	t.excludeSuffix = append(t.excludeSuffix, name)
 }
 
 func (t *watcherManager) Add(name string, h CallBack) (err error) {
