@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+
+
 // 默认的全局配置
 var (
 	CfgType = "yaml"

@@ -61,3 +61,6 @@ func initViperEnv(prefix string) {
 func ScriptPath() string {
 	return filepath.Join(Home, "scripts")
 }
+func GetDefault() string {
+	return ""
+}

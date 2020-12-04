@@ -52,7 +52,7 @@ func (t *job) load() (err error) {
 	defer xerror.RespErr(&err)
 
 	xerror.Panic(tikdog_watcher.Add(t.path, t.OnEvent))
-	xerror.Panic(tikdog_cron.Add(t.name, t.cron, t.OnEvent))
+	xerror.Panic(tikdog_cron.Add(t.name, t.cron, func(event tikdog_cron.Event) error { return t.OnEvent(event) }))
 	return nil
 }
 

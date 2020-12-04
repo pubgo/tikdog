@@ -1,7 +1,12 @@
 package main
 
-import "github.com/pubgo/tikdog/internal/cmds"
+import (
+	"github.com/pubgo/tikdog/internal/cmds"
+	"github.com/pubgo/tikdog/tikdog_sync"
+)
 
 func main() {
-	cmds.Run()
+	cmds.Run(
+		tikdog_sync.GetCmd(),
+	)
 }

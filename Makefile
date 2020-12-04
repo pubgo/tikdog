@@ -19,11 +19,7 @@ build:
 
 .PHONY: install
 install:
-	@go install -ldflags '${LDFLAGS}' .
-
-.PHONY: release
-release:
-	@go build -ldflags '${LDFLAGS}' -race -v -o main main.go
+	@go install -ldflags '${LDFLAGS}' -mod vendor -v .
 
 .PHONY: test
 test:
@@ -35,8 +31,8 @@ tag_list:
 
 .PHONY: release
 release:
-	GOOS=darwin GOARCH=amd64 $(GO) build -ldflags '$(LDFLAGS) -s -w' -o bin/darwin/tikdog
-	GOOS=linux GOARCH=amd64 $(GO) build -ldflags '$(LDFLAGS) -s -w' -o bin/linux/tikdog
-	GOOS=windows GOARCH=amd64 $(GO) build -ldflags '$(LDFLAGS) -s -w' -o bin/windows/tikdog.exe
+	GOOS=darwin GOARCH=amd64 $(GO) build -ldflags '$(LDFLAGS) -s -w' -race -v -o bin/darwin/tikdog
+	GOOS=linux GOARCH=amd64 $(GO) build -ldflags '$(LDFLAGS) -s -w' -race -v -o bin/linux/tikdog
+	GOOS=windows GOARCH=amd64 $(GO) build -ldflags '$(LDFLAGS) -s -w' -race -v -o bin/windows/tikdog.exe
 
 # statik -src=assets/build/  -include=*.html,*.js,*.json,*.css,*.png,*.svg,*.ico,*.ttf -f
