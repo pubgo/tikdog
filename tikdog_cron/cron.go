@@ -2,14 +2,15 @@ package tikdog_cron
 
 import (
 	"context"
+	"sync"
+
 	"github.com/pubgo/xerror"
 	"github.com/pubgo/xprocess"
 	"github.com/robfig/cron/v3"
-	"sync"
 )
 
 type Event struct{ context.Context }
-type CallBack func(event interface{}) error
+type CallBack func(event Event) error
 
 var EmptyEntry = cron.Entry{}
 

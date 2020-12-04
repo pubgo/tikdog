@@ -6,6 +6,7 @@ import (
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	badger "github.com/dgraph-io/badger/v2"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/pubgo/tikdog/tikdog_cron"
 	"github.com/pubgo/tikdog/tikdog_watcher"
 	"github.com/pubgo/xerror"
 	"github.com/twmb/murmur3"
@@ -62,47 +63,6 @@ var prefix = "sync_files"
 var ext = "drawio"
 
 func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
-	var callback = func(event interface{}) error {
-		evt := event.(tikdog_watcher.Event)
-		fmt.Println(evt.Op)
-		if tikdog_watcher.IsWriteEvent(evt) {
-			key := filepath.Join(prefix, evt.Name)
-
-			info, err := os.Lstat(evt.Name)
-			xerror.Panic(err)
-
-			var sf SyncFile
-			xerror.Panic(db.View(func(txn *badger.Txn) error {
-				itm, _ := txn.Get([]byte(key))
-				return xerror.Wrap(itm.Value(func(_val []byte) error {
-					return xerror.Wrap(jsoniter.Unmarshal(_val, &sf))
-				}))
-			}))
-
-			if info.ModTime().Unix() == sf.ModTime {
-				return nil
-			}
-
-			fmt.Println("sync:", key)
-			xerror.Panic(kk.PutObjectFromFile(key, evt.Name))
-
-			return xerror.Wrap(db.Update(func(txn *badger.Txn) error {
-				sf.Name = info.Name()
-				sf.Size = info.Size()
-				sf.Mode = info.Mode()
-				sf.ModTime = info.ModTime().Unix()
-				sf.IsDir = info.IsDir()
-				sf.Changed = false
-				sf.Synced = true
-				sf.Hash = getHash(evt.Name)
-				fmt.Println("store:", key)
-				return xerror.Wrap(txn.Set([]byte(key), getBytes(sf)))
-			}))
-		}
-		return nil
-	}
-	_ = callback
-
 	var sfs []SyncFile
 	xerror.Panic(filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -123,9 +83,6 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
 		if !strings.HasSuffix(info.Name(), ext) {
 			return nil
 		}
-
-		// watcher
-		//xerror.Panic(tikdog_watcher.Add(path, callback))
 
 		key := []byte(filepath.Join(prefix, path))
 
@@ -189,6 +146,8 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
 
 func main() {
 	tikdog_watcher.Start()
+	xerror.Exit(tikdog_cron.Start())
+	defer tikdog_cron.Stop()
 
 	client, err := oss.New(
 		os.Getenv("oss_endpoint"),
@@ -205,9 +164,20 @@ func main() {
 	}
 	defer db.Close()
 
-	syncDir(os.ExpandEnv("${HOME}/Documents"), kk, db, ext)
-	syncDir(os.ExpandEnv("${HOME}/Downloads"), kk, db, "")
-	syncDir(os.ExpandEnv("${HOME}/git/docs"), kk, db, "")
+	xerror.Exit(tikdog_cron.Add("Documents", "0 0/1 * * * *", func(event tikdog_cron.Event) error {
+		syncDir(os.ExpandEnv("${HOME}/Documents"), kk, db, ext)
+		return event.Err()
+	}))
+
+	xerror.Exit(tikdog_cron.Add("Downloads", "0 0/1 * * * *", func(event tikdog_cron.Event) error {
+		syncDir(os.ExpandEnv("${HOME}/Downloads"), kk, db, "")
+		return event.Err()
+	}))
+
+	xerror.Exit(tikdog_cron.Add("git/docs", "0 0/1 * * * *", func(event tikdog_cron.Event) error {
+		syncDir(os.ExpandEnv("${HOME}/git/docs"), kk, db, "")
+		return event.Err()
+	}))
 
 	//for _, k := range xerror.PanicErr(kk.ListObjectsV2(oss.Prefix(prefix))).(oss.ListObjectsResultV2).Objects {
 	//	fmt.Printf("%#v\n", k)
