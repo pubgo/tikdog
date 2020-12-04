@@ -147,6 +147,7 @@ func (t *watcherManager) AddRecursive(name string, h CallBack) (err error) {
 // Start
 // Endless loop and never return
 func (t *watcherManager) Start() {
+
 	go func() {
 		for {
 			select {

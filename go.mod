@@ -24,6 +24,7 @@ require (
 	github.com/pubgo/xerror v0.2.13
 	github.com/pubgo/xlog v0.0.10
 	github.com/pubgo/xprocess v0.0.3
+	github.com/radovskyb/watcher v1.0.7
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/spf13/afero v1.4.1 // indirect
