@@ -101,6 +101,7 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
 		}
 		return nil
 	}
+	_ = callback
 
 	var sfs []SyncFile
 	xerror.Panic(filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -109,6 +110,13 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
 		}
 
 		if info.IsDir() {
+			if info.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if info.Name() == ".DS_Store" {
 			return nil
 		}
 
@@ -117,7 +125,7 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
 		}
 
 		// watcher
-		xerror.Panic(tikdog_watcher.Add(path, callback))
+		//xerror.Panic(tikdog_watcher.Add(path, callback))
 
 		key := []byte(filepath.Join(prefix, path))
 
@@ -199,6 +207,7 @@ func main() {
 
 	syncDir(os.ExpandEnv("${HOME}/Documents"), kk, db, ext)
 	syncDir(os.ExpandEnv("${HOME}/Downloads"), kk, db, "")
+	syncDir(os.ExpandEnv("${HOME}/git/docs"), kk, db, "")
 
 	//for _, k := range xerror.PanicErr(kk.ListObjectsV2(oss.Prefix(prefix))).(oss.ListObjectsResultV2).Objects {
 	//	fmt.Printf("%#v\n", k)
