@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
-	"github.com/antonmedv/expr"
 	badger "github.com/dgraph-io/badger/v2"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pubgo/tikdog/internal/config"
@@ -76,8 +75,6 @@ func getHash(path string) (hash uint64) {
 var prefix = "sync_files"
 var ext = "drawio"
 
-var tabECMA = crc64.MakeTable(crc64.ECMA)
-
 func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
 	fmt.Println("checking", dir)
 
@@ -95,8 +92,10 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
 			head, err := kk.GetObjectMeta(key)
 			xerror.Panic(err)
 
-			if head.Get("X-Oss-Hash-Crc64ecma") != strconv.Itoa(int(sf.Crc64ecma)) {
-				fmt.Println(head.Get("X-Oss-Hash-Crc64ecma"), strconv.Itoa(int(sf.Crc64ecma)))
+			ccc, err := strconv.ParseUint(head.Get("X-Oss-Hash-Crc64ecma"), 10, 64)
+			xerror.Panic(err)
+			if ccc != sf.Crc64ecma {
+				fmt.Println(ccc, strconv.Itoa(int(sf.Crc64ecma)))
 				fmt.Println("sync:", key, sf.Path)
 				xerror.Exit(kk.PutObjectFromFile(key, sf.Path))
 			}
@@ -164,7 +163,6 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
 					return nil
 				}
 
-				fmt.Println(sf.ModTime, info.ModTime().Unix())
 				sf.Name = info.Name()
 				sf.Size = info.Size()
 				sf.Mode = info.Mode()
@@ -250,13 +248,13 @@ func GetDbCmd() *cobra.Command {
 			prefix = args[0]
 		}
 
-		var code = "true"
-		if len(args) > 1 {
-			code = args[1]
-		}
+		//var code = "true"
+		//if len(args) > 1 {
+		//	code = args[1]
+		//}
 
-		program, err := expr.Compile(code, expr.Env(&SyncFile{}))
-		xerror.Panic(err)
+		//program, err := expr.Compile(code, expr.Env(&SyncFile{}))
+		//xerror.Panic(err)
 
 		dbPath := filepath.Join(config.Home, "db")
 		opts := badger.DefaultOptions(dbPath)
@@ -283,12 +281,11 @@ func GetDbCmd() *cobra.Command {
 				xerror.Panic(item.Value(func(v []byte) error {
 					var sf SyncFile
 					xerror.Panic(jsoniter.Unmarshal(v, &sf))
-					output, err := expr.Run(program, &sf)
-					xerror.Panic(err)
-
-					if output.(bool) {
-						fmt.Println(string(item.Key()), string(v))
-					}
+					//output, err := expr.Run(program, &sf)
+					//xerror.Panic(err)
+					//if output.(bool) {
+					fmt.Println(string(item.Key()), string(v))
+					//}
 
 					return nil
 				}))
@@ -296,8 +293,6 @@ func GetDbCmd() *cobra.Command {
 
 			return nil
 		}))
-
-		select {}
 	}
 	return cmd
 }
