@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"go.uber.org/atomic"
 	"hash/crc64"
 	"io/ioutil"
 	"os"
@@ -75,16 +76,18 @@ func getHash(path string) (hash uint64) {
 var prefix = "sync_files"
 var ext = "drawio"
 
-func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
+func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Uint32) {
 	fmt.Println("checking", dir)
 
 	var sfs = make(chan SyncFile, 1)
 
-	xprocess.GoLoop(func(ctx context.Context) error {
+	xprocess.GoLoop(func(ctx context.Context) {
 		sf, ok := <-sfs
 		if !ok {
-			return nil
+			return
 		}
+
+		c.Inc()
 
 		key := filepath.Join(prefix, sf.Path)
 
@@ -95,7 +98,6 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
 			ccc, err := strconv.ParseUint(head.Get("X-Oss-Hash-Crc64ecma"), 10, 64)
 			xerror.Panic(err)
 			if ccc != sf.Crc64ecma {
-				fmt.Println(ccc, strconv.Itoa(int(sf.Crc64ecma)))
 				fmt.Println("sync:", key, sf.Path)
 				xerror.Exit(kk.PutObjectFromFile(key, sf.Path))
 			}
@@ -110,8 +112,6 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
 				return xerror.Wrap(txn.Set([]byte(Hash([]byte(key))), getBytes(sf)))
 			}))
 		}
-
-		return nil
 	})
 
 	xerror.Exit(filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -140,6 +140,7 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
 			itm, err := txn.Get([]byte(Hash(key)))
 			if err == badger.ErrKeyNotFound {
 				fmt.Println("ErrKeyNotFound:", string(key))
+
 				sfs <- SyncFile{
 					Name:      info.Name(),
 					Size:      info.Size(),
@@ -187,6 +188,8 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string) {
 func GetCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "sync", Short: "sync from local to remote"}
 	cmd.Run = func(cmd *cobra.Command, args []string) {
+		defer xerror.RespDebug()
+
 		tikdog_watcher.Start()
 		xerror.Exit(tikdog_cron.Start())
 		defer tikdog_cron.Stop()
@@ -205,18 +208,43 @@ func GetCmd() *cobra.Command {
 		xerror.Panic(err)
 		defer db.Close()
 
-		xerror.Exit(tikdog_cron.Add("Documents", "0 0/1 * * * *", func(event tikdog_cron.Event) error {
-			syncDir(os.ExpandEnv("${HOME}/Documents"), kk, db, ext)
+		var nw = NewWaiter()
+		xerror.Exit(tikdog_cron.Add("Documents", "0/5 * * * * *", func(event tikdog_cron.Event) error {
+			key := os.ExpandEnv("${HOME}/Documents")
+
+			if nw.Skip(key) {
+				return nil
+			}
+
+			var c = atomic.NewUint32(0)
+			syncDir(key, kk, db, ext, c)
+			nw.Report(key, c)
 			return event.Err()
 		}))
 
-		xerror.Exit(tikdog_cron.Add("Downloads", "0 0/1 * * * *", func(event tikdog_cron.Event) error {
-			syncDir(os.ExpandEnv("${HOME}/Downloads"), kk, db, "")
+		xerror.Exit(tikdog_cron.Add("Downloads", "0/5 * * * * *", func(event tikdog_cron.Event) error {
+			key := os.ExpandEnv("${HOME}/Downloads")
+
+			if nw.Skip(key) {
+				return nil
+			}
+
+			var c = atomic.NewUint32(0)
+			syncDir(key, kk, db, "", c)
+			nw.Report(key, c)
 			return event.Err()
 		}))
 
-		xerror.Exit(tikdog_cron.Add("git/docs", "0 0/1 * * * *", func(event tikdog_cron.Event) error {
-			syncDir(os.ExpandEnv("${HOME}/git/docs"), kk, db, "")
+		xerror.Exit(tikdog_cron.Add("git/docs", "0/5 * * * * *", func(event tikdog_cron.Event) error {
+			key := os.ExpandEnv("${HOME}/git/docs")
+
+			if nw.Skip(key) {
+				return nil
+			}
+
+			var c = atomic.NewUint32(0)
+			syncDir(key, kk, db, "", c)
+			nw.Report(key, c)
 			return event.Err()
 		}))
 

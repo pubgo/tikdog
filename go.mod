@@ -4,7 +4,6 @@ go 1.14
 
 require (
 	github.com/aliyun/aliyun-oss-go-sdk v2.1.5+incompatible
-	github.com/antonmedv/expr v1.8.9
 	github.com/baiyubin/aliyun-sts-go-sdk v0.0.0-20180326062324-cfa1a18b161f // indirect
 	github.com/creack/pty v1.1.11
 	github.com/dgraph-io/badger/v2 v2.2007.2
@@ -24,8 +23,7 @@ require (
 	github.com/pelletier/go-toml v1.8.1 // indirect
 	github.com/pubgo/xerror v0.2.13
 	github.com/pubgo/xlog v0.0.10
-	github.com/pubgo/xprocess v0.0.3
-	github.com/radovskyb/watcher v1.0.7 // indirect
+	github.com/pubgo/xprocess v0.0.4
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/spf13/afero v1.4.1 // indirect
@@ -34,6 +32,7 @@ require (
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/viper v1.7.1
 	github.com/twmb/murmur3 v1.1.5
+	go.uber.org/atomic v1.7.0
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.16.0
 	golang.org/x/sys v0.0.0-20201130072748-111129e158e2 // indirect

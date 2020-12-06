@@ -27,9 +27,7 @@ func (t *cronManager) Add(name string, spec string, cmd CallBack) (grr error) {
 	}
 
 	id, err := t.cron.AddFunc(spec, func() {
-		xprocess.Go(func(ctx context.Context) error {
-			return xerror.Wrap(cmd(Event{Context: ctx}))
-		})
+		xprocess.Go(func(ctx context.Context) { xerror.Panic(cmd(Event{Context: ctx})) })
 	})
 	xerror.Panic(err)
 	actual, loaded := t.data.LoadOrStore(name, id)
