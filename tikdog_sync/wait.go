@@ -33,7 +33,6 @@ func (t *Waiter) Report(key string, c *atomic.Uint32) {
 	}
 
 	t.data[key].Inc()
-	t.skip[key].Inc()
 }
 
 func (t *Waiter) Skip(key string) bool {
@@ -44,8 +43,10 @@ func (t *Waiter) Skip(key string) bool {
 		return false
 	}
 
+	t.skip[key].Inc()
 	if t.skip[key].Load() > 5 {
 		t.skip[key].Store(0)
+		xlog.Debug("no skip")
 		return false
 	}
 
