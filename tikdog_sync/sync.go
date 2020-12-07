@@ -92,23 +92,13 @@ func Md5(path string) string {
 	return base64.StdEncoding.EncodeToString(c.Sum(nil))
 }
 
-func checkAndSync(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Uint32) {
-	if tikdog_util.IsNotExist(dir) {
-		return
-	}
+func checkAndBackup(dir string, kk *oss.Bucket) {
+	var handle = func(path string) {
+		fmt.Println(path, "backup")
 
-	fmt.Println("checking", dir)
-
-	var sfs = make(chan SyncFile, 1)
-	var backupChan = make(chan string, 1)
-
-	xprocess.GoLoop(func(ctx context.Context) {
-		bk, ok := <-backupChan
-		if !ok {
-			xerror.Done()
-		}
-
-		xerror.Exit(filepath.Walk(bk, func(path string, info os.FileInfo, err error) error {
+		var g = xprocess.NewGroup()
+		defer g.Wait()
+		xerror.Exit(filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
@@ -125,27 +115,47 @@ func checkAndSync(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atom
 				return nil
 			}
 
-			if !strings.HasSuffix(info.Name(), ext) {
-				return nil
-			}
-
 			key := filepath.Join(backupPrefix, path)
-			fmt.Println("backup:", key, path)
-			xerror.Exit(kk.PutObjectFromFile(key, path, oss.ContentMD5(Md5(path))))
-			_ = os.Remove(path)
+			xlog.Infof("backup: %s", path)
+			g.Go(func(ctx context.Context) {
+				xerror.Panic(kk.PutObjectFromFile(key, path, oss.ContentMD5(Md5(path))))
+				time.AfterFunc(time.Second*5, func() { _ = os.Remove(path) })
+			})
+
 			return nil
 		}))
+	}
 
-	})
-
-	xprocess.GoLoop(func(ctx context.Context) {
-		sf, ok := <-sfs
-		if !ok {
-			xerror.Done()
+	xerror.Exit(filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
 		}
 
-		c.Inc()
+		if !info.IsDir() {
+			return nil
+		}
 
+		if info.Name()[0] == '.' {
+			return filepath.SkipDir
+		}
+
+		if info.Name() == backupPrefix {
+			handle(path)
+			return filepath.SkipDir
+		}
+
+		return nil
+	}))
+}
+
+func checkAndSync(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Bool) {
+	if tikdog_util.IsNotExist(dir) {
+		return
+	}
+
+	fmt.Println("checking", dir)
+
+	var handle = func(ctx context.Context, sf SyncFile) {
 		key := filepath.Join(syncPrefix, sf.Path)
 
 		if !sf.Synced {
@@ -172,28 +182,24 @@ func checkAndSync(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atom
 		}
 
 		if sf.Changed {
+			c.Store(true)
 			xerror.Exit(db.Update(func(txn *badger.Txn) error {
 				sf.Changed = false
 				xlog.Infof("store: %s %s", key, sf.Path)
 				return xerror.Wrap(txn.Set([]byte(Hash([]byte(key))), getBytes(sf)))
 			}))
 		}
-	})
+	}
 
-	defer close(sfs)
-	defer close(backupChan)
+	var g = xprocess.NewGroup()
+	defer g.Wait()
 	xerror.Exit(filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
 		if info.IsDir() {
-			if info.Name()[0] == '.' {
-				return filepath.SkipDir
-			}
-
-			if info.Name() == backupPrefix {
-				backupChan <- path
+			if info.Name()[0] == '.' || info.Name() == backupPrefix {
 				return filepath.SkipDir
 			}
 
@@ -215,18 +221,19 @@ func checkAndSync(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atom
 			itm, err := txn.Get([]byte(Hash(key)))
 			if err == badger.ErrKeyNotFound {
 				fmt.Println("ErrKeyNotFound:", string(key))
-
-				sfs <- SyncFile{
-					Name:      info.Name(),
-					Size:      info.Size(),
-					Mode:      info.Mode(),
-					ModTime:   info.ModTime().Unix(),
-					IsDir:     info.IsDir(),
-					Synced:    false,
-					Changed:   true,
-					Path:      path,
-					Crc64ecma: getCrc64Sum(path),
-				}
+				g.Go(func(ctx context.Context) {
+					handle(ctx, SyncFile{
+						Name:      info.Name(),
+						Size:      info.Size(),
+						Mode:      info.Mode(),
+						ModTime:   info.ModTime().Unix(),
+						IsDir:     info.IsDir(),
+						Synced:    false,
+						Changed:   true,
+						Path:      path,
+						Crc64ecma: getCrc64Sum(path),
+					})
+				})
 				return nil
 			}
 
@@ -246,13 +253,12 @@ func checkAndSync(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atom
 				sf.IsDir = info.IsDir()
 				sf.Changed = true
 
-				hash := getCrc64Sum(path)
-				if sf.Crc64ecma != hash {
+				if hash := getCrc64Sum(path); sf.Crc64ecma != hash {
 					sf.Synced = false
 					sf.Crc64ecma = hash
 				}
 
-				sfs <- sf
+				g.Go(func(ctx context.Context) { handle(ctx, sf) })
 				return nil
 			}))
 			return nil
@@ -260,33 +266,27 @@ func checkAndSync(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atom
 	}))
 }
 
-func checkAndMove(kk *oss.Bucket, db *badger.DB) {
-	var sfs = make(chan SyncFile, 1)
-
-	xprocess.GoLoop(func(ctx context.Context) {
-		sf, ok := <-sfs
-		if !ok {
-			xerror.Done()
-		}
-
+func checkAndMove(kk *oss.Bucket, db *badger.DB, c *atomic.Bool) {
+	var handle = func(sf SyncFile) {
 		if !tikdog_util.IsNotExist(sf.Path) {
 			return
 		}
 
+		c.Store(true)
 		xlog.Infof("delete:%s", sf.Path)
 
-		key := filepath.Join(syncPrefix, sf.Path)
+		xerror.Panic(OssMove(kk, filepath.Join(syncPrefix, sf.Path), filepath.Join(delPrefix, sf.Path)))
 		xerror.Panic(db.Update(func(txn *badger.Txn) error { return xerror.Wrap(txn.Delete([]byte(sf.Name))) }))
-		xerror.Panic(OssMove(kk, key, filepath.Join(delPrefix, sf.Path)))
-	})
+	}
 
+	g := xprocess.NewGroup()
+	defer g.Wait()
 	xerror.Exit(db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchSize = 10
 
 		it := txn.NewIterator(opts)
 		defer it.Close()
-		defer close(sfs)
 
 		for it.Rewind(); it.Valid(); it.Next() {
 			item := it.Item()
@@ -299,7 +299,8 @@ func checkAndMove(kk *oss.Bucket, db *badger.DB) {
 				var sf SyncFile
 				xerror.Panic(jsoniter.Unmarshal(v, &sf))
 				sf.Name = string(item.Key())
-				sfs <- sf
+
+				g.Go(func(ctx context.Context) { handle(sf) })
 				return nil
 			}))
 		}
@@ -333,50 +334,27 @@ func GetCmd() *cobra.Command {
 		defer db.Close()
 
 		var nw = NewWaiter()
-		xerror.Exit(tikdog_cron.Add("Documents", "0/5 * * * * *", func(event tikdog_cron.Event) error {
-			key := os.ExpandEnv("${HOME}/Documents")
+		var run = func(path string) {
+			key := os.ExpandEnv(path)
 
-			if nw.Skip(key) {
-				return nil
-			}
+			xprocess.GoLoop(func(ctx context.Context) {
+				if nw.Skip(key) {
+					time.Sleep(5 * time.Second)
+					return
+				}
 
-			var c = atomic.NewUint32(0)
-			checkAndSync(key, kk, db, ext, c)
-			checkAndMove(kk, db)
-			printStack()
-			nw.Report(key, c)
-			return event.Err()
-		}))
+				var c = atomic.NewBool(false)
+				defer nw.Report(key, c)
+				checkAndBackup(key, kk)
+				checkAndMove(kk, db, c)
+				checkAndSync(key, kk, db, "", c)
 
-		xerror.Exit(tikdog_cron.Add("Downloads", "0/5 * * * * *", func(event tikdog_cron.Event) error {
-			key := os.ExpandEnv("${HOME}/Downloads")
+			})
+		}
 
-			if nw.Skip(key) {
-				return nil
-			}
-
-			var c = atomic.NewUint32(0)
-			checkAndSync(key, kk, db, "", c)
-			checkAndMove(kk, db)
-			printStack()
-			nw.Report(key, c)
-			return event.Err()
-		}))
-
-		xerror.Exit(tikdog_cron.Add("git/docs", "0/5 * * * * *", func(event tikdog_cron.Event) error {
-			key := os.ExpandEnv("${HOME}/git/docs")
-
-			if nw.Skip(key) {
-				return nil
-			}
-
-			var c = atomic.NewUint32(0)
-			checkAndSync(key, kk, db, "", c)
-			checkAndMove(kk, db)
-			printStack()
-			nw.Report(key, c)
-			return event.Err()
-		}))
+		run("${HOME}/Documents")
+		run("${HOME}/Downloads")
+		run("${HOME}/git/docs")
 
 		//for _, k := range xerror.PanicErr(kk.ListObjectsV2(oss.Prefix(syncPrefix))).(oss.ListObjectsResultV2).Objects {
 		//	fmt.Printf("%#v\n", k)

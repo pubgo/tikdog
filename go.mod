@@ -23,7 +23,7 @@ require (
 	github.com/pelletier/go-toml v1.8.1 // indirect
 	github.com/pubgo/xerror v0.3.1
 	github.com/pubgo/xlog v0.0.10
-	github.com/pubgo/xprocess v0.0.4
+	github.com/pubgo/xprocess v0.0.8
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/spf13/afero v1.4.1 // indirect
