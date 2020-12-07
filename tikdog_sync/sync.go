@@ -126,7 +126,8 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 			return nil
 		}
 
-		if info.Name() == ".DS_Store" {
+		// 隐藏文件
+		if info.Name()[0] == '.' {
 			return nil
 		}
 
