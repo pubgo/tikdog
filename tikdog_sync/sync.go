@@ -3,6 +3,7 @@ package tikdog_sync
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -54,7 +55,7 @@ func Hash(data []byte) (hash string) {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func getHash(path string) (hash uint64) {
+func getCrc64Sum(path string) uint64 {
 	var n = time.Now()
 	defer func() {
 		fmt.Println(path, time.Since(n))
@@ -76,24 +77,78 @@ func printStack() {
 // 本地存储中，如果已经同步了，那么就不用同步了
 //
 
-var prefix = "sync_files"
+var syncPrefix = "sync_files"
 var ext = "drawio"
 
 var delPrefix = "trash"
+var backupPrefix = "backup"
 
 func Md5(path string) string {
 	dt, err := ioutil.ReadFile(path)
 	xerror.Panic(err)
 
-	c := crc64.New(crc64.MakeTable(crc64.ECMA))
+	c := md5.New()
 	xerror.PanicErr(c.Write(dt))
 	return base64.StdEncoding.EncodeToString(c.Sum(nil))
 }
 
-func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Uint32) {
+func checkAndSync(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Uint32) {
+	if tikdog_util.IsNotExist(dir) {
+		return
+	}
+
 	fmt.Println("checking", dir)
 
 	var sfs = make(chan SyncFile, 1)
+	var backupChan = make(chan string, 1)
+
+	xprocess.GoLoop(func(ctx context.Context) {
+		bk, ok := <-backupChan
+		if !ok {
+			xerror.Done()
+		}
+
+		xerror.Exit(filepath.Walk(bk, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if info.IsDir() {
+				if info.Name()[0] == '.' {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+
+			// 隐藏文件
+			if info.Name()[0] == '.' {
+				return nil
+			}
+
+			if !strings.HasSuffix(info.Name(), ext) {
+				return nil
+			}
+
+			sfs <- SyncFile{
+				Name:      info.Name(),
+				Size:      info.Size(),
+				Mode:      info.Mode(),
+				ModTime:   info.ModTime().Unix(),
+				IsDir:     info.IsDir(),
+				Synced:    false,
+				Changed:   true,
+				Path:      path,
+				Crc64ecma: getCrc64Sum(path),
+			}
+
+			key := filepath.Join(backupPrefix, path)
+			fmt.Println("backup:", key, path)
+			xerror.Exit(kk.PutObjectFromFile(key, path, oss.ContentMD5(Md5(path))))
+			_ = os.Remove(path)
+			return nil
+		}))
+
+	})
 
 	xprocess.GoLoop(func(ctx context.Context) {
 		sf, ok := <-sfs
@@ -103,7 +158,7 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 
 		c.Inc()
 
-		key := filepath.Join(prefix, sf.Path)
+		key := filepath.Join(syncPrefix, sf.Path)
 
 		if !sf.Synced {
 			var ccc uint64
@@ -138,6 +193,7 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 	})
 
 	defer close(sfs)
+	defer close(backupChan)
 	xerror.Exit(filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -147,6 +203,12 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 			if info.Name()[0] == '.' {
 				return filepath.SkipDir
 			}
+
+			if info.Name() == backupPrefix {
+				backupChan <- path
+				return filepath.SkipDir
+			}
+
 			return nil
 		}
 
@@ -159,7 +221,7 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 			return nil
 		}
 
-		key := []byte(filepath.Join(prefix, path))
+		key := []byte(filepath.Join(syncPrefix, path))
 
 		return xerror.Wrap(db.View(func(txn *badger.Txn) error {
 			itm, err := txn.Get([]byte(Hash(key)))
@@ -175,7 +237,7 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 					Synced:    false,
 					Changed:   true,
 					Path:      path,
-					Crc64ecma: getHash(path),
+					Crc64ecma: getCrc64Sum(path),
 				}
 				return nil
 			}
@@ -196,7 +258,7 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 				sf.IsDir = info.IsDir()
 				sf.Changed = true
 
-				hash := getHash(path)
+				hash := getCrc64Sum(path)
 				if sf.Crc64ecma != hash {
 					sf.Synced = false
 					sf.Crc64ecma = hash
@@ -210,7 +272,7 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 	}))
 }
 
-func CheckFile(kk *oss.Bucket, db *badger.DB) {
+func checkAndMove(kk *oss.Bucket, db *badger.DB) {
 	var sfs = make(chan SyncFile, 1)
 
 	xprocess.GoLoop(func(ctx context.Context) {
@@ -225,7 +287,7 @@ func CheckFile(kk *oss.Bucket, db *badger.DB) {
 
 		xlog.Infof("delete:%s", sf.Path)
 
-		key := filepath.Join(prefix, sf.Path)
+		key := filepath.Join(syncPrefix, sf.Path)
 		xerror.Panic(db.Update(func(txn *badger.Txn) error { return xerror.Wrap(txn.Delete([]byte(sf.Name))) }))
 		xerror.Panic(OssMove(kk, key, filepath.Join(delPrefix, sf.Path)))
 	})
@@ -241,7 +303,7 @@ func CheckFile(kk *oss.Bucket, db *badger.DB) {
 		for it.Rewind(); it.Valid(); it.Next() {
 			item := it.Item()
 
-			if !bytes.HasPrefix(item.Key(), []byte(prefix)) {
+			if !bytes.HasPrefix(item.Key(), []byte(syncPrefix)) {
 				continue
 			}
 
@@ -291,8 +353,8 @@ func GetCmd() *cobra.Command {
 			}
 
 			var c = atomic.NewUint32(0)
-			syncDir(key, kk, db, ext, c)
-			CheckFile(kk, db)
+			checkAndSync(key, kk, db, ext, c)
+			checkAndMove(kk, db)
 			printStack()
 			nw.Report(key, c)
 			return event.Err()
@@ -306,8 +368,8 @@ func GetCmd() *cobra.Command {
 			}
 
 			var c = atomic.NewUint32(0)
-			syncDir(key, kk, db, "", c)
-			CheckFile(kk, db)
+			checkAndSync(key, kk, db, "", c)
+			checkAndMove(kk, db)
 			printStack()
 			nw.Report(key, c)
 			return event.Err()
@@ -321,14 +383,14 @@ func GetCmd() *cobra.Command {
 			}
 
 			var c = atomic.NewUint32(0)
-			syncDir(key, kk, db, "", c)
-			CheckFile(kk, db)
+			checkAndSync(key, kk, db, "", c)
+			checkAndMove(kk, db)
 			printStack()
 			nw.Report(key, c)
 			return event.Err()
 		}))
 
-		//for _, k := range xerror.PanicErr(kk.ListObjectsV2(oss.Prefix(prefix))).(oss.ListObjectsResultV2).Objects {
+		//for _, k := range xerror.PanicErr(kk.ListObjectsV2(oss.Prefix(syncPrefix))).(oss.ListObjectsResultV2).Objects {
 		//	fmt.Printf("%#v\n", k)
 		//}
 

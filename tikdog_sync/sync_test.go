@@ -2,10 +2,11 @@ package tikdog_sync
 
 import (
 	"fmt"
-	"github.com/aliyun/aliyun-oss-go-sdk/oss"
-	"github.com/pubgo/xerror"
 	"os"
 	"testing"
+
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
+	"github.com/pubgo/xerror"
 )
 
 func TestName(t *testing.T) {
@@ -19,7 +20,7 @@ func TestName(t *testing.T) {
 	continuationToken := ""
 	for i := 2; i > 0; i-- {
 		kk := xerror.PanicErr(client.Bucket("kooksee")).(*oss.Bucket)
-		resp := xerror.PanicErr(kk.ListObjectsV2(oss.Prefix(prefix), oss.ContinuationToken(continuationToken))).(oss.ListObjectsResultV2)
+		resp := xerror.PanicErr(kk.ListObjectsV2(oss.Prefix(syncPrefix), oss.ContinuationToken(continuationToken))).(oss.ListObjectsResultV2)
 		continuationToken = resp.NextContinuationToken
 
 		fmt.Println(resp.Prefix)
