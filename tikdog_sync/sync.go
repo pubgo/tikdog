@@ -3,10 +3,9 @@ package tikdog_sync
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"github.com/pubgo/xlog"
-	"go.uber.org/atomic"
 	"hash/crc64"
 	"io/ioutil"
 	"os"
@@ -25,9 +24,11 @@ import (
 	"github.com/pubgo/tikdog/tikdog_util"
 	"github.com/pubgo/tikdog/tikdog_watcher"
 	"github.com/pubgo/xerror"
+	"github.com/pubgo/xlog"
 	"github.com/pubgo/xprocess"
 	"github.com/spf13/cobra"
 	"github.com/twmb/murmur3"
+	"go.uber.org/atomic"
 )
 
 type SyncFile struct {
@@ -40,10 +41,6 @@ type SyncFile struct {
 	Mode      os.FileMode
 	ModTime   int64
 	IsDir     bool
-}
-
-func handleKey(key string) string {
-	return strings.ReplaceAll(key, " ", "-")
 }
 
 func getBytes(data interface{}) []byte {
@@ -82,6 +79,17 @@ func printStack() {
 var prefix = "sync_files"
 var ext = "drawio"
 
+var delPrefix = "trash"
+
+func Md5(path string) string {
+	dt, err := ioutil.ReadFile(path)
+	xerror.Panic(err)
+
+	c := crc64.New(crc64.MakeTable(crc64.ECMA))
+	xerror.PanicErr(c.Write(dt))
+	return base64.StdEncoding.EncodeToString(c.Sum(nil))
+}
+
 func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Uint32) {
 	fmt.Println("checking", dir)
 
@@ -111,7 +119,10 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 
 			if ccc != sf.Crc64ecma {
 				fmt.Println("sync:", key, sf.Path)
-				xerror.Exit(kk.PutObjectFromFile(key, sf.Path))
+				xerror.Exit(kk.PutObjectFromFile(
+					key, sf.Path,
+					oss.ContentMD5(Md5(sf.Path)),
+				))
 			}
 			sf.Changed = true
 			sf.Synced = true
@@ -216,7 +227,7 @@ func CheckFile(kk *oss.Bucket, db *badger.DB) {
 
 		key := filepath.Join(prefix, sf.Path)
 		xerror.Panic(db.Update(func(txn *badger.Txn) error { return xerror.Wrap(txn.Delete([]byte(sf.Name))) }))
-		_ = kk.DeleteObject(key)
+		xerror.Panic(OssMove(kk, key, filepath.Join(delPrefix, sf.Path)))
 	})
 
 	xerror.Exit(db.View(func(txn *badger.Txn) error {
@@ -392,4 +403,17 @@ func GetDbCmd() *cobra.Command {
 		}))
 	}
 	return cmd
+}
+
+func OssMove(k *oss.Bucket, srcObjectKey, destObjectKey string) error {
+	_, err := k.CopyObject(srcObjectKey, destObjectKey)
+	if err != nil {
+		if strings.Contains(err.Error(), "StatusCode=404") {
+			return nil
+		}
+
+		return xerror.Wrap(err)
+	}
+
+	return xerror.Wrap(k.DeleteObject(srcObjectKey))
 }

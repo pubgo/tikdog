@@ -1,11 +1,12 @@
 package tikdog_sync
 
 import (
-	"github.com/pubgo/xlog"
-	"go.uber.org/atomic"
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/pubgo/xlog"
+	"go.uber.org/atomic"
 )
 
 func init() {
