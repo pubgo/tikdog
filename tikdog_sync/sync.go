@@ -129,18 +129,6 @@ func checkAndSync(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atom
 				return nil
 			}
 
-			sfs <- SyncFile{
-				Name:      info.Name(),
-				Size:      info.Size(),
-				Mode:      info.Mode(),
-				ModTime:   info.ModTime().Unix(),
-				IsDir:     info.IsDir(),
-				Synced:    false,
-				Changed:   true,
-				Path:      path,
-				Crc64ecma: getCrc64Sum(path),
-			}
-
 			key := filepath.Join(backupPrefix, path)
 			fmt.Println("backup:", key, path)
 			xerror.Exit(kk.PutObjectFromFile(key, path, oss.ContentMD5(Md5(path))))
@@ -173,7 +161,7 @@ func checkAndSync(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atom
 			}
 
 			if ccc != sf.Crc64ecma {
-				fmt.Println("sync:", key, sf.Path)
+				xlog.Infof("sync: %s %s", key, sf.Path)
 				xerror.Exit(kk.PutObjectFromFile(
 					key, sf.Path,
 					oss.ContentMD5(Md5(sf.Path)),
@@ -186,7 +174,7 @@ func checkAndSync(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atom
 		if sf.Changed {
 			xerror.Exit(db.Update(func(txn *badger.Txn) error {
 				sf.Changed = false
-				fmt.Println("store:", key, sf.Path)
+				xlog.Infof("store: %s %s", key, sf.Path)
 				return xerror.Wrap(txn.Set([]byte(Hash([]byte(key))), getBytes(sf)))
 			}))
 		}
