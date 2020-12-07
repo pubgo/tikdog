@@ -21,7 +21,7 @@ require (
 	github.com/mitchellh/mapstructure v1.4.0
 	github.com/onsi/ginkgo v1.13.0 // indirect
 	github.com/pelletier/go-toml v1.8.1 // indirect
-	github.com/pubgo/xerror v0.2.13
+	github.com/pubgo/xerror v0.3.1
 	github.com/pubgo/xlog v0.0.10
 	github.com/pubgo/xprocess v0.0.4
 	github.com/robfig/cron/v3 v3.0.1

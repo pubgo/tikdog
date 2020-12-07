@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/pubgo/xlog"
 	"go.uber.org/atomic"
 	"hash/crc64"
 	"io/ioutil"
@@ -21,6 +22,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pubgo/tikdog/internal/config"
 	"github.com/pubgo/tikdog/tikdog_cron"
+	"github.com/pubgo/tikdog/tikdog_util"
 	"github.com/pubgo/tikdog/tikdog_watcher"
 	"github.com/pubgo/xerror"
 	"github.com/pubgo/xprocess"
@@ -69,6 +71,10 @@ func getHash(path string) (hash uint64) {
 	return c.Sum64()
 }
 
+func printStack() {
+	fmt.Println(xprocess.Stack())
+}
+
 // 本地文件加载
 // 本地存储中，如果已经同步了，那么就不用同步了
 //
@@ -84,7 +90,7 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 	xprocess.GoLoop(func(ctx context.Context) {
 		sf, ok := <-sfs
 		if !ok {
-			return
+			xerror.Done()
 		}
 
 		c.Inc()
@@ -120,6 +126,7 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 		}
 	})
 
+	defer close(sfs)
 	xerror.Exit(filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -192,6 +199,55 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 	}))
 }
 
+func CheckFile(kk *oss.Bucket, db *badger.DB) {
+	var sfs = make(chan SyncFile, 1)
+
+	xprocess.GoLoop(func(ctx context.Context) {
+		sf, ok := <-sfs
+		if !ok {
+			xerror.Done()
+		}
+
+		if !tikdog_util.IsNotExist(sf.Path) {
+			return
+		}
+
+		xlog.Infof("delete:%s", sf.Path)
+
+		key := filepath.Join(prefix, sf.Path)
+		xerror.Panic(db.Update(func(txn *badger.Txn) error { return xerror.Wrap(txn.Delete([]byte(sf.Name))) }))
+		_ = kk.DeleteObject(key)
+	})
+
+	xerror.Exit(db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchSize = 10
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		defer close(sfs)
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+
+			if !bytes.HasPrefix(item.Key(), []byte(prefix)) {
+				continue
+			}
+
+			xerror.Panic(item.Value(func(v []byte) error {
+				var sf SyncFile
+				xerror.Panic(jsoniter.Unmarshal(v, &sf))
+				sf.Name = string(item.Key())
+				sfs <- sf
+				return nil
+			}))
+		}
+
+		return nil
+	}))
+
+}
+
 func GetCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "sync", Short: "sync from local to remote"}
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -225,6 +281,8 @@ func GetCmd() *cobra.Command {
 
 			var c = atomic.NewUint32(0)
 			syncDir(key, kk, db, ext, c)
+			CheckFile(kk, db)
+			printStack()
 			nw.Report(key, c)
 			return event.Err()
 		}))
@@ -238,6 +296,8 @@ func GetCmd() *cobra.Command {
 
 			var c = atomic.NewUint32(0)
 			syncDir(key, kk, db, "", c)
+			CheckFile(kk, db)
+			printStack()
 			nw.Report(key, c)
 			return event.Err()
 		}))
@@ -251,6 +311,8 @@ func GetCmd() *cobra.Command {
 
 			var c = atomic.NewUint32(0)
 			syncDir(key, kk, db, "", c)
+			CheckFile(kk, db)
+			printStack()
 			nw.Report(key, c)
 			return event.Err()
 		}))
