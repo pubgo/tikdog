@@ -58,7 +58,7 @@ func Hash(data []byte) (hash string) {
 func getHash(path string) (hash uint64) {
 	var n = time.Now()
 	defer func() {
-		fmt.Println(time.Since(n), path)
+		fmt.Println(path, time.Since(n))
 	}()
 
 	dt, err := ioutil.ReadFile(path)
@@ -92,11 +92,17 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 		key := filepath.Join(prefix, sf.Path)
 
 		if !sf.Synced {
+			var ccc uint64
 			head, err := kk.GetObjectMeta(key)
-			xerror.Panic(err)
+			if err != nil && !strings.Contains(err.Error(), "StatusCode=404") {
+				xerror.Panic(err)
+			}
 
-			ccc, err := strconv.ParseUint(head.Get("X-Oss-Hash-Crc64ecma"), 10, 64)
-			xerror.Panic(err)
+			if head != nil {
+				ccc, err = strconv.ParseUint(head.Get("X-Oss-Hash-Crc64ecma"), 10, 64)
+				xerror.Panic(err)
+			}
+
 			if ccc != sf.Crc64ecma {
 				fmt.Println("sync:", key, sf.Path)
 				xerror.Exit(kk.PutObjectFromFile(key, sf.Path))
