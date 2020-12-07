@@ -126,7 +126,7 @@ func syncDir(dir string, kk *oss.Bucket, db *badger.DB, ext string, c *atomic.Ui
 		}
 
 		if info.IsDir() {
-			if info.Name() == ".git" {
+			if info.Name()[0] == '.' {
 				return filepath.SkipDir
 			}
 			return nil
