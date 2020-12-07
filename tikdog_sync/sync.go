@@ -299,8 +299,8 @@ func checkAndMove(kk *oss.Bucket, db *badger.DB, c *atomic.Bool) {
 				var sf SyncFile
 				xerror.Panic(jsoniter.Unmarshal(v, &sf))
 				sf.Name = string(item.Key())
-
-				g.Go(func(ctx context.Context) { handle(sf) })
+				handle(sf)
+				//g.Go(func(ctx context.Context) { handle(sf) })
 				return nil
 			}))
 		}
@@ -433,6 +433,7 @@ func GetDbCmd() *cobra.Command {
 }
 
 func OssMove(k *oss.Bucket, srcObjectKey, destObjectKey string) error {
+	xlog.Infof("copy: %s %s", srcObjectKey, destObjectKey)
 	_, err := k.CopyObject(srcObjectKey, destObjectKey)
 	if err != nil {
 		if strings.Contains(err.Error(), "StatusCode=404") {
@@ -442,5 +443,6 @@ func OssMove(k *oss.Bucket, srcObjectKey, destObjectKey string) error {
 		return xerror.Wrap(err)
 	}
 
+	xlog.Infof("delete: %s",srcObjectKey)
 	return xerror.Wrap(k.DeleteObject(srcObjectKey))
 }

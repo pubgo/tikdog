@@ -69,6 +69,7 @@ func (t *Waiter) Skip(key string) bool {
 		return false
 	}
 
+	t.skip[key].Inc()
 	xlog.Debugf("skip: %s", key)
 	return true
 }
