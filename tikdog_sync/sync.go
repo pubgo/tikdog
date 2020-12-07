@@ -345,10 +345,9 @@ func GetCmd() *cobra.Command {
 
 				var c = atomic.NewBool(false)
 				defer nw.Report(key, c)
-				checkAndBackup(key, kk)
-				checkAndMove(kk, db, c)
 				checkAndSync(key, kk, db, "", c)
-
+				checkAndMove(kk, db, c)
+				checkAndBackup(key, kk)
 			})
 		}
 
